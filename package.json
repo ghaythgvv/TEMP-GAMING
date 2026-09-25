@@ -1,0 +1,11 @@
+{
+  "name": "temp-gaming",
+  "version": "1.0.0",
+  "main": "voiceManager.js",
+  "scripts": {
+    "start": "node voiceManager.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1"
+  }
+}
