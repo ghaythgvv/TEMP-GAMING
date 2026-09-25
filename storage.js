@@ -1,9 +1,10 @@
 // storage.js
-// Simple JSON-file-backed storage for temp voice channels / game panel data.
-// No database was configured for this service, so this persists to a local
-// data.json file on disk. On Railway, note that the filesystem is ephemeral
-// unless you attach a Volume — mount one to /app/data if you need this to
-// survive restarts/redeploys.
+// JSON-file-backed persistence for: per-user saved settings/emoji, live temp
+// voice channel records, and per-guild configuration.
+//
+// NOTE: Railway's filesystem is ephemeral on redeploy/restart unless you
+// attach a Volume mounted at this directory. Fine for now, but attach one
+// before relying on this in production.
 
 const fs = require('fs');
 const path = require('path');
@@ -11,25 +12,20 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'storage.json');
 
-// ---- internal helpers -------------------------------------------------
-
 function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ channels: {}, guilds: {} }, null, 2));
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ users: {}, tempChannels: {}, guildConfigs: {} }, null, 2));
   }
 }
 
 function readAll() {
   ensureFile();
   try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
-    return JSON.parse(raw);
+    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   } catch (err) {
-    console.error('[storage] Failed to read/parse storage file, resetting.', err);
-    const fresh = { channels: {}, guilds: {} };
+    console.error('[storage] corrupt storage file, resetting:', err.message);
+    const fresh = { users: {}, tempChannels: {}, guildConfigs: {} };
     writeAll(fresh);
     return fresh;
   }
@@ -40,57 +36,84 @@ function writeAll(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-// ---- channel-level storage (per temp voice channel) --------------------
+// ---- per-user saved settings (carried over between that user's channels) ----
 
-function getChannelData(channelId) {
+function getUserSettings(userId) {
   const data = readAll();
-  return data.channels[channelId] || null;
+  return data.users[userId]?.settings || null;
 }
 
-function setChannelData(channelId, value) {
+function setUserSettings(userId, settings) {
   const data = readAll();
-  data.channels[channelId] = { ...(data.channels[channelId] || {}), ...value };
+  if (!data.users[userId]) data.users[userId] = {};
+  data.users[userId].settings = { ...(data.users[userId].settings || {}), ...settings };
   writeAll(data);
-  return data.channels[channelId];
+  return data.users[userId].settings;
 }
 
-function deleteChannelData(channelId) {
+// ---- per-user preferred emoji ----
+
+function getUserEmoji(userId) {
   const data = readAll();
-  delete data.channels[channelId];
+  return data.users[userId]?.emoji || null;
+}
+
+function setUserEmoji(userId, emoji) {
+  const data = readAll();
+  if (!data.users[userId]) data.users[userId] = {};
+  data.users[userId].emoji = emoji;
+  writeAll(data);
+  return emoji;
+}
+
+// ---- live temp channel records ----
+
+function getTempChannel(channelId) {
+  const data = readAll();
+  return data.tempChannels[channelId] || null;
+}
+
+function setTempChannel(channelId, value) {
+  const data = readAll();
+  data.tempChannels[channelId] = value;
+  writeAll(data);
+  return data.tempChannels[channelId];
+}
+
+function deleteTempChannel(channelId) {
+  const data = readAll();
+  delete data.tempChannels[channelId];
   writeAll(data);
 }
 
-function getAllChannels() {
+function getAllTempChannels() {
   const data = readAll();
-  return data.channels;
+  return data.tempChannels;
 }
 
-// ---- guild-level storage (per-server settings) --------------------------
+// ---- per-guild config (join-to-create channel ids, categories, dashboard) ----
 
-function getGuildData(guildId) {
+function getGuildConfig(guildId) {
   const data = readAll();
-  return data.guilds[guildId] || null;
+  return data.guildConfigs[guildId] || null;
 }
 
-function setGuildData(guildId, value) {
+function setGuildConfig(guildId, value) {
   const data = readAll();
-  data.guilds[guildId] = { ...(data.guilds[guildId] || {}), ...value };
+  data.guildConfigs[guildId] = { ...(data.guildConfigs[guildId] || {}), ...value };
   writeAll(data);
-  return data.guilds[guildId];
-}
-
-function deleteGuildData(guildId) {
-  const data = readAll();
-  delete data.guilds[guildId];
-  writeAll(data);
+  return data.guildConfigs[guildId];
 }
 
 module.exports = {
-  getChannelData,
-  setChannelData,
-  deleteChannelData,
-  getAllChannels,
-  getGuildData,
-  setGuildData,
-  deleteGuildData,
+  getUserSettings,
+  setUserSettings,
+  getUserEmoji,
+  setUserEmoji,
+  getTempChannel,
+  setTempChannel,
+  deleteTempChannel,
+  getAllTempChannels,
+  getGuildConfig,
+  setGuildConfig,
 };
