@@ -547,6 +547,20 @@ const client = new Client({
 
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+
+  // Seed the game "join to create" channel every startup — storage resets
+  // on redeploy, so this can't rely on being set once and staying set.
+  // GUILD_ID comes from the environment variable already configured on
+  // Railway.
+  if (process.env.GUILD_ID) {
+    storage.setGuildConfig(process.env.GUILD_ID, {
+      gameJoinToCreateId: '1553121517879951480',
+    });
+    console.log('[startup] game join-to-create channel configured.');
+  } else {
+    console.warn('[startup] GUILD_ID env var is missing — game channel creation will not trigger.');
+  }
+
   await reconcileOnStartup(client);
 });
 
