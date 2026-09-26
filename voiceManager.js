@@ -370,10 +370,13 @@ async function setChannelGame(channel, tempData, channelId, gameName, emoji) {
   // silently can't render a custom emoji there (whether it's one of your
   // server's or one uploaded to the bot via the Developer Portal), and what
   // you get instead is that raw numeric snowflake showing up in the name.
-  // So the name always uses the plain controller emoji, no matter which
-  // emoji the game itself uses — that one only shows on the button and in
-  // the embed text, both of which render custom emoji just fine.
-  const finalName = sanitizeChannelName(`${GAME_CHANNEL_EMOJI} ${gameName}`);
+  // So instead of any emoji, the name is styled as "★GAMENAME★" in caps —
+  // the game's own emoji only shows on the button and in the embed text,
+  // both of which render custom emoji just fine. (Any lock/mic icon you see
+  // to the left of a voice channel's name in Discord's own UI is the client
+  // showing that the channel's permissions are restricted — it's not part
+  // of the channel name string at all, so there's nothing to set here for it.)
+  const finalName = sanitizeChannelName(`★${gameName.toUpperCase()}★`);
   await channel.setName(finalName).catch((err) => {
     console.warn(`[gamevc] could not rename channel to "${finalName}": ${err.message}`);
   });
