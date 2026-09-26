@@ -1,54 +1,44 @@
 // panelView.js
 // Builds the embed + buttons posted in every regular (non-game) temp voice
-// channel. Wire a matching interactionCreate handler elsewhere in the bot
-// that listens for these customIds and calls back into voiceManager.js /
-// storage.js as needed — this file only builds the message, it doesn't
-// handle clicks.
+// channel. Restyled to a compact status-line layout (theme borrowed from a
+// reference panel screenshot — button set is unchanged, only the look).
+// Wire a matching interactionCreate handler elsewhere in the bot that
+// listens for these customIds — this file only builds the message, it
+// doesn't handle clicks (see interactionHandler.js).
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { toFancyBold } = require('./utils');
 
-const PANEL_COLOR = 0x8b5cf6; // violet accent, matches the server's panel theme
+const PANEL_COLOR = 0x8e44ec; // purple accent, matches the reference panel's vibe
 
 function buildPanelEmbed(ownerMember, tempData) {
   const ownerName = ownerMember ? ownerMember.displayName : 'Unknown';
-  const limitText = tempData.limit && tempData.limit > 0 ? `${tempData.limit}` : 'Unlimited';
+  const limitText = tempData.limit && tempData.limit > 0 ? `Limit ${tempData.limit}` : 'No limit';
   const lockedText = tempData.locked ? '🔒 Locked' : '🔓 Unlocked';
   const trustedCount = (tempData.trusted || []).length;
   const cleanupText =
     typeof tempData.cleanupIntervalMinutes === 'number' && tempData.cleanupIntervalMinutes > 0
-      ? `Every ${tempData.cleanupIntervalMinutes} min`
-      : 'Off';
-  const createdLine = tempData.createdAt
-    ? `🕒 Created <t:${Math.floor(tempData.createdAt / 1000)}:R>`
-    : '';
+      ? `Auto-delete every ${tempData.cleanupIntervalMinutes} min`
+      : 'Auto-delete off';
+
+  const statusLine = `${lockedText} • ${limitText} • Trusted: ${trustedCount} • ${cleanupText}`;
 
   return new EmbedBuilder()
     .setColor(PANEL_COLOR)
-    .setTitle(`${tempData.emoji || '🔊'} ${toFancyBold('CHANNEL PANEL')}`)
-    .setDescription(
-      ['### Status',
-        `${lockedText} • 👥 Limit: **${limitText}** • 🧹 Auto-clean: **${cleanupText}**`,
-        createdLine,
-        `👑 **Owner:** ${tempData.emoji || ''} ${ownerName}`,
-        '*Owner-only controls below.*',
-      ].filter(Boolean).join('\n\n')
-    )
-    .addFields(
-      { name: '🛡️ Trusted Users', value: `${trustedCount}`, inline: true },
-    );
+    .setTitle(`${tempData.emoji || '🔊'} Channel Panel`)
+    .setDescription(`${statusLine}\n\nOwner-only controls below.`)
+    .addFields({ name: 'Owner', value: `${tempData.emoji || ''} ${ownerName}`.trim() });
 }
 
 function buildPanelComponents() {
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('tempvc_lock').setLabel('Lock/Unlock').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('tempvc_limit').setLabel('Set Limit').setEmoji('👥').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('tempvc_lock').setLabel('Lock / Unlock').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('tempvc_limit').setLabel('Limit').setEmoji('👥').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('tempvc_rename').setLabel('Rename').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
   );
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('tempvc_trust').setLabel('Trust User').setEmoji('✅').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('tempvc_kick').setLabel('Kick User').setEmoji('🚫').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('tempvc_transfer').setLabel('Transfer Owner').setEmoji('👑').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('tempvc_trust').setLabel('Trust').setEmoji('🛡️').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('tempvc_kick').setLabel('Kick').setEmoji('🚫').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('tempvc_transfer').setLabel('Transfer Ownership').setEmoji('🔄').setStyle(ButtonStyle.Primary),
   );
   return [row1, row2];
 }
