@@ -290,20 +290,35 @@ async function createGameChannel(member, guild, config) {
   await refreshDashboard(guild).catch(() => {});
 }
 
+// Renders text in the "Mathematical Sans-Serif Bold" Unicode block — the
+// ★𝗟𝗜𝗞𝗘 𝗧𝗛𝗜𝗦★ look. This is real Unicode text, not an image or custom
+// emoji, so it's safe to use in a channel name (custom emojis like
+// <:name:id> are NOT safe there — Discord just shows the raw tag text).
+function toStylizedBold(text) {
+  return text.replace(/[A-Za-z0-9]/g, (ch) => {
+    const code = ch.codePointAt(0);
+    if (code >= 65 && code <= 90) return String.fromCodePoint(0x1d5d4 + (code - 65)); // A-Z
+    if (code >= 97 && code <= 122) return String.fromCodePoint(0x1d5ee + (code - 97)); // a-z
+    if (code >= 48 && code <= 57) return String.fromCodePoint(0x1d7ec + (code - 48)); // 0-9
+    return ch;
+  });
+}
+
 // Renames a game channel to match the picked game and records it in
 // storage. Used both for the fixed game-list buttons and the "Other" modal.
 // Returns true if the rename actually went through — Discord only allows a
 // channel to be renamed twice every 10 minutes, so this can come back
 // false even though everything else about the pick succeeded.
 async function setChannelGame(channel, tempData, channelId, gameName, emoji) {
-  const finalName = sanitizeChannelName(`${emoji} ${gameName}`);
+  const stylized = toStylizedBold(gameName.toUpperCase());
+  const finalName = sanitizeChannelName(`★${stylized}★`);
   let renamed = true;
   await channel.setName(finalName).catch((err) => {
     renamed = false;
     console.warn(`[gamevc] could not rename channel to "${finalName}": ${err.message}`);
   });
   tempData.game = gameName;
-  tempData.gameEmoji = emoji;
+  tempData.gameEmoji = emoji; // still used for the embed title, just not the channel name
   storage.setTempChannel(channelId, tempData);
   return renamed;
 }
@@ -562,8 +577,9 @@ client.once('ready', async () => {
   if (process.env.GUILD_ID) {
     storage.setGuildConfig(process.env.GUILD_ID, {
       gameJoinToCreateId: '1553121517879951480',
+      gameCategoryId: '1513904233471283252',
     });
-    console.log('[startup] game join-to-create channel configured.');
+    console.log('[startup] game join-to-create channel and category configured.');
   } else {
     console.warn('[startup] GUILD_ID env var is missing — game channel creation will not trigger.');
   }
