@@ -16,27 +16,26 @@ const GAME_PANEL_COLOR = 0x8b5cf6;
 // need to switch to a select menu instead (same 25-cap reasoning as
 // EMOJI_PALETTE in the regular panel).
 //
-// NOTE: using the plain 🎮 emoji for every entry here instead of custom
-// emoji IDs, since custom emoji IDs are tied to whatever server they were
-// uploaded to and won't render anywhere else. Swap any of these back to
-// a `<:name:id>` custom emoji string once you have IDs valid for your server.
-//
 // `prompt` controls what happens right when the button is clicked:
 //   'party'  -> a "Party Code" modal pops up immediately (Valorant, Among Us)
 //   'name'   -> a "Game Name" modal pops up immediately (Roblox)
 //   omitted  -> no modal, the channel is just renamed straight away
+//
+// NOTE: these custom emoji are used on the picker BUTTONS only. Once a game
+// is picked, the embed title (and the channel name, wherever that's set)
+// always shows the plain 🎮 emoji instead — see buildGamePanelEmbed below.
 const GAME_LIST = [
-  { key: 'valorant', label: 'Valorant', emoji: '🎮', prompt: 'party' },
-  { key: 'lol', label: 'League of Legends', emoji: '🎮' },
-  { key: 'minecraft', label: 'Minecraft', emoji: '🎮' },
-  { key: 'fortnite', label: 'Fortnite', emoji: '🎮' },
-  { key: 'cs2', label: 'CS2', emoji: '🎮' },
-  { key: 'gtav', label: 'GTA V', emoji: '🎮' },
-  { key: 'cod', label: 'Call of Duty', emoji: '🎮' },
-  { key: 'apex', label: 'Apex Legends', emoji: '🎮' },
-  { key: 'rocketleague', label: 'Rocket League', emoji: '🎮' },
-  { key: 'amongus', label: 'Among Us', emoji: '🎮', prompt: 'party' },
-  { key: 'roblox', label: 'Roblox', emoji: '🎮', prompt: 'name' },
+  { key: 'valorant', label: 'Valorant', emoji: '<:images1:1553240634079314010>', prompt: 'party' },
+  { key: 'lol', label: 'League of Legends', emoji: '<:3907_lol:1553240599321116773>' },
+  { key: 'minecraft', label: 'Minecraft', emoji: '<:401852minecraftpelogo:1553240528471068753>' },
+  { key: 'fortnite', label: 'Fortnite', emoji: '<:481292fortnite:1553240486742065192>' },
+  { key: 'cs2', label: 'CS2', emoji: '<:28349cs21:1553240555033731252>' },
+  { key: 'gtav', label: 'GTA V', emoji: '<:450991grandtheftautov:1553240503896776765>' },
+  { key: 'cod', label: 'Call of Duty', emoji: '<:dm_call_of_duty128:1553240959700045825>' },
+  { key: 'apex', label: 'Apex Legends', emoji: '<:Apex1281:1553240957951148052>' },
+  { key: 'rocketleague', label: 'Rocket League', emoji: '<:rocket_l128:1553240961084162118>' },
+  { key: 'amongus', label: 'Among Us', emoji: '<:among_us128:1553241086926000168>', prompt: 'party' },
+  { key: 'roblox', label: 'Roblox', emoji: '<:roblox128:1553241088330965113>', prompt: 'name' },
 ];
 
 function getGameByKey(key) {
@@ -79,7 +78,7 @@ function buildGamePanelEmbed(member, tempData) {
   }
 
   embed
-    .setTitle(`${tempData.gameEmoji || '🎮'} ${tempData.game}`)
+    .setTitle(`🎮 ${tempData.game}`)
     .setDescription([extraLine, 'Owner-only controls above.'].filter(Boolean).join('\n\n'));
 
   return embed;
