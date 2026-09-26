@@ -3,7 +3,7 @@ const storage = require('./storage');
 const { randomEmoji } = require('./emojiPalette');
 const { applyEmojiToMember, removeEmojiFromMember, stripEmojiPrefixes } = require('./nickname');
 const { buildPanelEmbed, buildPanelComponents, buildPanelAttachments } = require('./panelView');
-const { buildGamePanelEmbed, buildGamePanelComponents, buildGameRoomControlsEmbed, buildGameRoomControlsComponents } = require('./gamePanelView');
+const { buildGamePanelEmbed, buildGamePanelComponents } = require('./gamePanelView');
 const { refreshDashboard } = require('./dashboard');
 
 const pendingDeletions = new Set(); // channelIds with a delete check already queued
@@ -51,20 +51,9 @@ function sanitizeChannelName(name) {
 // whatever the panel buttons already let them do — mainly so they can also
 // use Discord's own right-click menu to move/mute/deafen people in it, and
 // so locking the channel can never lock the owner out of their own channel.
-//
-// ViewChannel/SendMessages/ReadMessageHistory/Speak are explicit here (not
-// just Connect) because the bot moves the owner into the channel directly
-// via member.voice.setChannel(), which bypasses permission checks — without
-// these, an owner could be sitting in a channel they don't actually have
-// permission to see or type in, especially once the base overwrites below
-// lock the channel down to the Verified role.
 const OWNER_CHANNEL_PERMISSIONS = {
   ManageChannels: true,
-  ViewChannel: true,
   Connect: true,
-  Speak: true,
-  SendMessages: true,
-  ReadMessageHistory: true,
 };
 
 async function updateOwnerPermissions(channel, oldOwnerId, newOwnerId) {
@@ -77,46 +66,6 @@ async function updateOwnerPermissions(channel, oldOwnerId, newOwnerId) {
     }
   } catch (err) {
     console.warn(`[permissions] could not update owner overwrite: ${err.message}`);
-  }
-}
-
-// Discord does NOT automatically copy a category's permission overwrites
-// onto a new channel created under it via the API (that only happens when
-// someone manually clicks "Sync Permissions" in the client, or calls
-// channel.lockPermissions() like below) — so without this, every temp/game
-// channel is created wide open (or, if the guild's @everyone role itself
-// doesn't have ViewChannel, wide CLOSED) regardless of how the category
-// is actually configured for regular members. This copies whatever the
-// category currently allows straight onto the new channel, right after
-// creation, so a normal member sees the exact same thing in the new temp
-// channel that they already see in the category around it — no role IDs
-// needed, and it stays correct even if the category's permissions change
-// later.
-async function syncToCategoryPermissions(channel) {
-  try {
-    await channel.lockPermissions();
-  } catch (err) {
-    console.warn(`[permissions] could not sync ${channel.name} to its category's permissions: ${err.message}`);
-  }
-}
-
-// Optional: a specific role that should be locked out of every temp/game
-// channel entirely — view, connect, and send all denied — regardless of
-// what the category or any other role allows. Set config.blockedRoleId
-// (same place as categoryId/gameCategoryId) to turn this on; until then it
-// quietly does nothing. This is applied AFTER syncToCategoryPermissions and
-// BEFORE the owner's own overwrite, so a role-wide deny here can still
-// never lock the channel's actual owner out of their own channel.
-async function denyBlockedRole(channel, config) {
-  if (!config.blockedRoleId) return;
-  try {
-    await channel.permissionOverwrites.edit(config.blockedRoleId, {
-      ViewChannel: false,
-      Connect: false,
-      SendMessages: false,
-    });
-  } catch (err) {
-    console.warn(`[permissions] could not apply blockedRoleId overwrite on ${channel.name}: ${err.message}`);
   }
 }
 
@@ -138,31 +87,11 @@ function snapshotOwnerSettings(tempData) {
   });
 }
 
-// Deletes the "looking for teammates" announcement posted for a game
-// channel, if one was ever sent (regular temp channels never set these
-// fields, so this is a safe no-op for them). Guild is passed separately
-// rather than read off `channel` because this also runs from paths where
-// the game channel itself is already gone.
-async function deleteAnnounceMessage(guild, tempData) {
-  if (!tempData || !tempData.announceMessageId || !tempData.announceChannelId) return;
-  try {
-    const announceChannel =
-      guild.channels.cache.get(tempData.announceChannelId) ||
-      (await guild.channels.fetch(tempData.announceChannelId).catch(() => null));
-    if (!announceChannel) return;
-    const message = await announceChannel.messages.fetch(tempData.announceMessageId).catch(() => null);
-    if (message) await message.delete().catch(() => {});
-  } catch (err) {
-    console.warn(`[gamevc] could not delete announcement message: ${err.message}`);
-  }
-}
-
 // The one place a temp channel actually gets deleted — snapshots the
 // owner's settings first, then clears the live record, then removes the
 // Discord channel itself. Shared by regular temp channels and game
 // channels alike.
 async function destroyTempChannel(guild, channel, channelId, tempData) {
-  await deleteAnnounceMessage(guild, tempData);
   snapshotOwnerSettings(tempData);
   storage.deleteTempChannel(channelId);
   if (channel) {
@@ -261,18 +190,6 @@ async function createTempChannel(member, guild, config) {
   };
   storage.setTempChannel(channel.id, tempDataRecord);
 
-  // Order matters: sync to the category first (so this channel behaves
-  // like any other channel a normal member already sees in there), then
-  // force ViewChannel on for everyone regardless of what the category
-  // said, then apply the blocked-role deny (if configured) on top, then
-  // finally the owner's own overwrite — a member-specific overwrite always
-  // beats a role-specific one, so this order guarantees the owner is never
-  // the one who ends up locked out by any of the previous steps.
-  await syncToCategoryPermissions(channel);
-  await channel.permissionOverwrites.edit(guild.roles.everyone, { ViewChannel: true }).catch((err) => {
-    console.warn(`[permissions] could not force ViewChannel on ${channel.name}: ${err.message}`);
-  });
-  await denyBlockedRole(channel, config);
   await updateOwnerPermissions(channel, null, member.id);
 
   // Restore the locked state and re-grant anyone who was trusted before —
@@ -343,27 +260,15 @@ async function createGameChannel(member, guild, config) {
     emoji: GAME_CHANNEL_EMOJI,
     game: null,
     gameEmoji: null,
-    locked: false,
-    limit: 0,
     createdAt: Date.now(),
   };
   storage.setTempChannel(channel.id, tempDataRecord);
 
-  // Same ordering as createTempChannel above: category sync, then force
-  // everyone able to see the channel regardless of what the category
-  // allows (game channels should be visible to any member, not gated),
-  // then the blocked-role deny, then the owner's own overwrite last so it
-  // always wins.
-  await syncToCategoryPermissions(channel);
-  await channel.permissionOverwrites.edit(guild.roles.everyone, { ViewChannel: true }).catch((err) => {
-    console.warn(`[permissions] could not force ViewChannel on ${channel.name}: ${err.message}`);
-  });
-  await denyBlockedRole(channel, config);
   await updateOwnerPermissions(channel, null, member.id);
 
   try {
     const panelMessage = await channel.send({
-      content: `<@${member.id}> pick a game below 👇`,
+      content: `<@${member.id}> pick a game below`,
       embeds: [buildGamePanelEmbed(member, tempDataRecord)],
       components: buildGamePanelComponents(tempDataRecord),
     });
@@ -371,20 +276,6 @@ async function createGameChannel(member, guild, config) {
     storage.setTempChannel(channel.id, tempDataRecord);
   } catch (err) {
     console.warn(`[gamevc] could not post the game panel in ${channel.name}: ${err.message}`);
-  }
-
-  // Second, separate message — the Room Controls panel (Owner/Limit/Lock),
-  // same idea as the regular temp-vc panel but its own standalone message
-  // rather than merged into the game picker above.
-  try {
-    const roomControlsMessage = await channel.send({
-      embeds: [buildGameRoomControlsEmbed(member, tempDataRecord)],
-      components: buildGameRoomControlsComponents(tempDataRecord),
-    });
-    tempDataRecord.roomPanelMessageId = roomControlsMessage.id;
-    storage.setTempChannel(channel.id, tempDataRecord);
-  } catch (err) {
-    console.warn(`[gamevc] could not post the room controls panel in ${channel.name}: ${err.message}`);
   }
 
   try {
@@ -401,22 +292,20 @@ async function createGameChannel(member, guild, config) {
 
 // Renames a game channel to match the picked game and records it in
 // storage. Used both for the fixed game-list buttons and the "Other" modal.
+// Returns true if the rename actually went through — Discord only allows a
+// channel to be renamed twice every 10 minutes, so this can come back
+// false even though everything else about the pick succeeded.
 async function setChannelGame(channel, tempData, channelId, gameName, emoji) {
-  // Channel NAMES can only contain plain Unicode characters — Discord
-  // silently can't render a custom emoji there (whether it's one of your
-  // server's or one uploaded to the bot via the Developer Portal), and what
-  // you get instead is that raw numeric snowflake showing up in the name.
-  // So the name always uses the plain controller emoji, no matter which
-  // emoji the game itself uses — that one only shows on the button and in
-  // the embed text, both of which render custom emoji just fine.
-  const finalName = sanitizeChannelName(`${GAME_CHANNEL_EMOJI} ${gameName}`);
+  const finalName = sanitizeChannelName(`${emoji} ${gameName}`);
+  let renamed = true;
   await channel.setName(finalName).catch((err) => {
+    renamed = false;
     console.warn(`[gamevc] could not rename channel to "${finalName}": ${err.message}`);
   });
   tempData.game = gameName;
   tempData.gameEmoji = emoji;
-  tempData.gameSetAt = Date.now();
   storage.setTempChannel(channelId, tempData);
+  return renamed;
 }
 
 async function onJoinTracked(member, tempData) {
@@ -445,7 +334,6 @@ function scheduleEmptyCheck(channelId, guild) {
     const tempData = storage.getTempChannel(channelId);
     const channel = guild.channels.cache.get(channelId);
     if (!channel) {
-      await deleteAnnounceMessage(guild, tempData);
       snapshotOwnerSettings(tempData);
       storage.deleteTempChannel(channelId);
       await refreshDashboard(guild).catch(() => {});
@@ -519,7 +407,6 @@ async function sweepEmptyChannels(client) {
     if (!guild) continue;
     const channel = guild.channels.cache.get(channelId);
     if (!channel) {
-      await deleteAnnounceMessage(guild, data);
       snapshotOwnerSettings(data);
       storage.deleteTempChannel(channelId);
       await refreshDashboard(guild).catch(() => {});
@@ -675,48 +562,13 @@ client.once('ready', async () => {
   if (process.env.GUILD_ID) {
     storage.setGuildConfig(process.env.GUILD_ID, {
       gameJoinToCreateId: '1553121517879951480',
-      gameCategoryId: '1513904233471283252',
-      dashboardChannelId: '1553107162929037442',
-      gameAnnounceChannelId: '1513904271337197741',
-      gameRoleIds: {
-        valorant: '1513904163237658624',
-        lol: '1513904166349574266',
-        minecraft: '1513904165368107059',
-        fortnite: '1513904162113454211',
-        cs2: '1513904171349442621',
-        gtav: '1513904167893078148',
-        // cod: no role configured — announcement just won't ping for it
-        // apex: no role configured — announcement just won't ping for it
-        rocketleague: '1513904163950559415',
-        amongus: '1553328314805002300',
-        roblox: '1513904172653613167',
-        mlbb: '1543651761292836947',
-      },
     });
-    console.log('[startup] game join-to-create channel and category configured.');
+    console.log('[startup] game join-to-create channel configured.');
   } else {
     console.warn('[startup] GUILD_ID env var is missing — game channel creation will not trigger.');
   }
 
   await reconcileOnStartup(client);
-});
-
-// Catches the channel being deleted directly (e.g. an admin deletes it by
-// hand in Discord, rather than it emptying out normally) so its announce
-// message doesn't linger — sweepEmptyChannels/scheduleEmptyCheck would
-// eventually catch this too, but only on their next pass.
-client.on('channelDelete', async (channel) => {
-  try {
-    const tempData = storage.getTempChannel(channel.id);
-    if (!tempData) return;
-    const guild = channel.guild;
-    await deleteAnnounceMessage(guild, tempData);
-    snapshotOwnerSettings(tempData);
-    storage.deleteTempChannel(channel.id);
-    await refreshDashboard(guild).catch(() => {});
-  } catch (err) {
-    console.error('[channelDelete] unhandled error:', err);
-  }
 });
 
 client.on('voiceStateUpdate', (oldState, newState) => {
