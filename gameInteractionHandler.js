@@ -67,15 +67,23 @@ async function handleGameInteraction(interaction) {
           return interaction.followUp({ content: 'Unknown game.', ephemeral: true });
         }
 
-        await setChannelGame(channel, tempData, channel.id, game.label, game.emoji);
+        const renamed = await setChannelGame(channel, tempData, channel.id, game.label, game.emoji);
         tempData.extraType = game.prompt || null;
         tempData.extraValue = null;
         storage.setTempChannel(channel.id, tempData);
 
-        return interaction.editReply({
+        await interaction.editReply({
           embeds: [buildGamePanelEmbed(interaction.member, tempData)],
           components: buildGamePanelComponents(tempData),
         });
+
+        if (!renamed) {
+          return interaction.followUp({
+            content: '⚠️ Discord only allows a channel name to change twice every 10 minutes. Your pick was saved and the panel updated — the channel name will catch up once that limit resets.',
+            ephemeral: true,
+          });
+        }
+        return;
       }
 
       if (interaction.customId === 'game_change') {
@@ -108,15 +116,23 @@ async function handleGameInteraction(interaction) {
           return interaction.followUp({ content: "Game name can't be empty.", ephemeral: true });
         }
 
-        await setChannelGame(channel, tempData, channel.id, name, '🎮');
+        const renamed = await setChannelGame(channel, tempData, channel.id, name, '🎮');
         tempData.extraType = null;
         tempData.extraValue = null;
         storage.setTempChannel(channel.id, tempData);
 
-        return interaction.editReply({
+        await interaction.editReply({
           embeds: [buildGamePanelEmbed(interaction.member, tempData)],
           components: buildGamePanelComponents(tempData),
         });
+
+        if (!renamed) {
+          return interaction.followUp({
+            content: '⚠️ Discord only allows a channel name to change twice every 10 minutes. Your pick was saved and the panel updated — the channel name will catch up once that limit resets.',
+            ephemeral: true,
+          });
+        }
+        return;
       }
 
       if (interaction.customId === 'game_extra_modal') {
