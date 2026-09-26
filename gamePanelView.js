@@ -45,6 +45,7 @@ const GAME_LIST = [
 function buildGamePanelEmbed(member, tempData) {
   const ownerName = member ? member.displayName : 'Unknown';
   const embed = new EmbedBuilder().setColor(GAME_PANEL_COLOR);
+  if (member) embed.setThumbnail(member.displayAvatarURL({ size: 256 }));
 
   if (!tempData.game) {
     embed
