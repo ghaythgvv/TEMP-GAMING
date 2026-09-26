@@ -260,6 +260,11 @@ async function createGameChannel(member, guild, config) {
     emoji: GAME_CHANNEL_EMOJI,
     game: null,
     gameEmoji: null,
+    limit: 0,
+    locked: false,
+    mutedAll: false,
+    extraType: null,
+    extraValue: null,
     createdAt: Date.now(),
   };
   storage.setTempChannel(channel.id, tempDataRecord);
@@ -269,7 +274,7 @@ async function createGameChannel(member, guild, config) {
   try {
     const panelMessage = await channel.send({
       content: `<@${member.id}> pick a game below`,
-      embeds: [buildGamePanelEmbed(member, tempDataRecord)],
+      embeds: [buildGamePanelEmbed(member, tempDataRecord, channel.members.size)],
       components: buildGamePanelComponents(tempDataRecord),
     });
     tempDataRecord.panelMessageId = panelMessage.id;
@@ -309,13 +314,17 @@ function toStylizedBold(text) {
 // Returns true if the rename actually went through — Discord only allows a
 // channel to be renamed twice every 10 minutes, so this can come back
 // false even though everything else about the pick succeeded.
-async function setChannelGame(channel, tempData, channelId, gameName, emoji) {
+async function setChannelGame(channel, tempData, channelId, gameName, emoji, categoryId) {
   const stylized = toStylizedBold(gameName.toUpperCase());
   const finalName = sanitizeChannelName(`★${stylized}★`);
   let renamed = true;
-  await channel.setName(finalName).catch((err) => {
+  const editPayload = { name: finalName };
+  if (categoryId) editPayload.parent = categoryId;
+  // One combined edit call (name + category together) instead of two
+  // separate API calls — friendlier to Discord's per-channel rate limit.
+  await channel.edit(editPayload).catch((err) => {
     renamed = false;
-    console.warn(`[gamevc] could not rename channel to "${finalName}": ${err.message}`);
+    console.warn(`[gamevc] could not update channel to "${finalName}"${categoryId ? ` (category ${categoryId})` : ''}: ${err.message}`);
   });
   tempData.game = gameName;
   tempData.gameEmoji = emoji; // still used for the embed title, just not the channel name
@@ -323,13 +332,43 @@ async function setChannelGame(channel, tempData, channelId, gameName, emoji) {
   return renamed;
 }
 
+// Same idea as refreshPanelMessage above, but for the game panel — needed
+// so "In Room: x/y" stays accurate as people join/leave, not just when a
+// button gets clicked.
+async function refreshGamePanelMessage(channel, tempData) {
+  if (!tempData || !tempData.panelMessageId) return;
+  try {
+    const ownerMember = await channel.guild.members.fetch(tempData.ownerId).catch(() => null);
+    const message = await channel.messages.fetch(tempData.panelMessageId).catch(() => null);
+    if (!message) return; // self-healing repost isn't critical here, unlike the regular panel
+    await message.edit({
+      embeds: [buildGamePanelEmbed(ownerMember, tempData, channel.members.size)],
+      components: buildGamePanelComponents(tempData),
+    });
+  } catch (err) {
+    console.warn(`[gamevc] could not refresh game panel message: ${err.message}`);
+  }
+}
+
 async function onJoinTracked(member, tempData) {
-  if (tempData.type === 'game') return; // game channels don't sync a nickname emoji
+  if (tempData.type === 'game') {
+    // Mute-all is "sticky" — anyone who joins while it's on gets muted too,
+    // not just whoever was in the channel when it was switched on. The
+    // owner is exempt so they always keep control of their own room.
+    if (tempData.mutedAll && member.id !== tempData.ownerId) {
+      await member.voice.setMute(true).catch(() => {});
+    }
+    return; // game channels don't sync a nickname emoji
+  }
   await applyEmojiToMember(member, tempData.emoji);
 }
 
 async function onLeaveTracked(member, channelId, guild, tempData) {
-  if (!tempData || tempData.type !== 'game') {
+  if (!tempData) {
+    scheduleEmptyCheck(channelId, guild);
+    return;
+  }
+  if (tempData.type !== 'game') {
     await removeEmojiFromMember(member);
   }
   scheduleEmptyCheck(channelId, guild);
@@ -382,6 +421,10 @@ async function handleVoiceStateUpdate(oldState, newState) {
   // had just been applied a moment earlier by joining a static channel.
   if (oldTempData) {
     await onLeaveTracked(member, oldChannelId, guild, oldTempData);
+    if (oldTempData.type === 'game') {
+      const oldChannel = guild.channels.cache.get(oldChannelId);
+      if (oldChannel) await refreshGamePanelMessage(oldChannel, oldTempData);
+    }
   } else if (leftStaticChannel && !joinedStaticChannel) {
     await removeEmojiFromMember(member);
   }
@@ -408,6 +451,10 @@ async function handleVoiceStateUpdate(oldState, newState) {
     const newTempData = storage.getTempChannel(newChannelId);
     if (newTempData) {
       await onJoinTracked(member, newTempData);
+      if (newTempData.type === 'game') {
+        const newChannel = guild.channels.cache.get(newChannelId);
+        if (newChannel) await refreshGamePanelMessage(newChannel, newTempData);
+      }
     }
   }
 }
