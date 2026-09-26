@@ -7,25 +7,24 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const { toFancyBold, chunkEvenly } = require('./utils');
 
-// Same violet accent as the regular temp-vc panel, for a consistent look.
-const GAME_PANEL_COLOR = 0x8b5cf6;
-
-// Max buttons per row before wrapping to the next one. Rows are balanced
-// evenly (see chunkEvenly in utils.js) so there's never a lone straggler
-// button dangling on its own row.
-const BUTTONS_PER_ROW = 4;
+// Green theme, distinct from the purple regular temp-vc panel.
+const GAME_PANEL_COLOR = 0x2ecc71;
 
 // The buttoned game list. Add/remove entries freely — 5 buttons fit per
 // row and Discord allows up to 5 rows, so this can grow to 25 before you'd
 // need to switch to a select menu instead (same 25-cap reasoning as
 // EMOJI_PALETTE in the regular panel).
 //
-// `prompt` controls what happens right when the button is clicked:
-//   'party'  -> a "Party Code" modal pops up immediately (Valorant, Among Us)
-//   'name'   -> a "Game Name" modal pops up immediately (Roblox)
-//   omitted  -> no modal, the channel is just renamed straight away
+// `prompt` controls the optional second button shown once this game is
+// picked:
+//   'party' -> "Set Party Code" (Valorant, Among Us — games with a single
+//              lobby/party code you invite people with)
+//   'name'  -> "Set Game Name" (Roblox — the platform itself isn't the
+//              game, so this captures which Roblox experience it is)
+//   undefined -> no second button, just "Change Game"
+//
+// Emojis here are this server's own custom emojis (<:name:id> format).
 const GAME_LIST = [
   { key: 'valorant', label: 'Valorant', emoji: '<:images1:1553240634079314010>', prompt: 'party' },
   { key: 'lol', label: 'League of Legends', emoji: '<:3907_lol:1553240599321116773>' },
@@ -41,150 +40,77 @@ const GAME_LIST = [
   { key: 'mlbb', label: 'MLBB', emoji: '<:3451_mlbb:1553311380684144672>' },
 ];
 
-function getGameByKey(key) {
-  return GAME_LIST.find((g) => g.key === key) || null;
-}
-
-// Looks up what kind of modal (if any) a currently-picked game uses, from
-// the key stored on tempData — so the panel knows whether to show
-// "Set/Edit Party Code", "Set/Edit Game Name", or nothing at all.
-function getPromptType(gameKey) {
-  const game = getGameByKey(gameKey);
-  return game ? game.prompt || null : null;
-}
-
 // ---- main panel (before/after a game is picked) ----
 
 function buildGamePanelEmbed(member, tempData) {
+  const ownerName = member ? member.displayName : 'Unknown';
   const embed = new EmbedBuilder().setColor(GAME_PANEL_COLOR);
 
   if (!tempData.game) {
     embed
-      .setTitle(`🎮 ${toFancyBold('PICK A GAME')}`)
-      .setDescription(
-        '🕹️ **Choose a game below** — the channel renames itself and everyone can see what\'s being played.\n\n' +
-        `🔑 **Valorant** & **Among Us** get a *Set Party Code* button once picked.\n` +
-        `📝 **Roblox** asks which game right away.\n` +
-        `➕ Playing something else? Hit **Others** and type it in.\n\n` +
-        '*Owner-only controls above.*'
-      );
+      .setTitle('🎮 Game Channel')
+      .setDescription('Pick a game below — this renames the channel and lets everyone see what you\'re playing.\n\nOwner-only controls below.')
+      .addFields({ name: 'Owner', value: ownerName });
     return embed;
   }
 
-  const promptType = getPromptType(tempData.gameKey);
   let extraLine = '';
-  if (promptType === 'party') {
-    extraLine = tempData.partyCode
-      ? `🔑 **Party Code**\n\`\`\`${tempData.partyCode}\`\`\``
-      : '🔑 *No party code set yet — click* **Set Party Code** *above if you have one to share.*';
-  } else if (promptType === 'name') {
-    extraLine = tempData.gameNameExtra
-      ? `📝 **Game Name**\n\`\`\`${tempData.gameNameExtra}\`\`\``
-      : '📝 *No game name set yet — click* **Set Game Name** *above.*';
+  if (tempData.extraType === 'party') {
+    extraLine = tempData.extraValue ? `🔑 **Party Code:** \`${tempData.extraValue}\`` : '🔑 No party code set yet.';
+  } else if (tempData.extraType === 'name') {
+    extraLine = tempData.extraValue ? `🎲 **Playing:** ${tempData.extraValue}` : '🎲 No specific game set yet.';
   }
 
-  const startedLine = tempData.gameSetAt
-    ? `⏱️ Playing since <t:${Math.floor(tempData.gameSetAt / 1000)}:R>`
-    : '';
-
   embed
-    .setTitle(`${tempData.gameEmoji || '🎮'} ${toFancyBold(String(tempData.game).toUpperCase())}`)
-    .setDescription(
-      ['### Now Playing', startedLine, extraLine, '*Owner-only controls above.*']
-        .filter(Boolean)
-        .join('\n\n')
-    );
+    .setTitle(`${tempData.gameEmoji || '🎮'} ${tempData.game}`)
+    .setDescription(`${extraLine}${extraLine ? '\n\n' : ''}Owner-only controls below.`)
+    .addFields({ name: 'Owner', value: ownerName });
 
   return embed;
 }
 
 function buildGamePanelComponents(tempData) {
-  // A game has been picked — show "change game" plus, only for games that
-  // actually use one, a set/edit button for their party code or game name.
+  // A game has been picked — show "change game" + whatever second button
+  // (if any) that game's `extra` type calls for.
   if (tempData.game) {
     const buttons = [
-      new ButtonBuilder().setCustomId('game_change').setLabel('Switch Game').setEmoji('🔁').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('game_change').setLabel('Change Game').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
     ];
 
-    const promptType = getPromptType(tempData.gameKey);
-    if (promptType === 'party') {
+    if (tempData.extraType === 'party') {
       buttons.push(
-        new ButtonBuilder()
-          .setCustomId('game_code_edit_open')
-          .setLabel(tempData.partyCode ? 'Edit Party Code' : 'Set Party Code')
-          .setEmoji('🔑')
-          .setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('game_extra_open').setLabel('Set Party Code').setEmoji('🔑').setStyle(ButtonStyle.Primary)
       );
-    } else if (promptType === 'name') {
+    } else if (tempData.extraType === 'name') {
       buttons.push(
-        new ButtonBuilder()
-          .setCustomId('game_name_edit_open')
-          .setLabel(tempData.gameNameExtra ? 'Edit Game Name' : 'Set Game Name')
-          .setEmoji('📝')
-          .setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('game_extra_open').setLabel('Set Game Name').setEmoji('🎲').setStyle(ButtonStyle.Primary)
       );
     }
 
     return [new ActionRowBuilder().addComponents(buttons)];
   }
 
-  // No game picked yet — show the full list, lined up evenly (see
-  // chunkEvenly in utils.js) so there's never a lone button hanging on its
-  // own row, however many games end up on the list.
-  const allButtons = [...GAME_LIST, { key: 'other', label: 'Others', emoji: '➕' }];
-  return chunkEvenly(allButtons, BUTTONS_PER_ROW).map((chunk) =>
-    new ActionRowBuilder().addComponents(
-      chunk.map((g) =>
-        new ButtonBuilder().setCustomId(`game_pick_${g.key}`).setLabel(g.label).setEmoji(g.emoji).setStyle(ButtonStyle.Secondary)
+  // No game picked yet — show the full list, 5 buttons per row, plus an
+  // "Others" button on its own row at the end.
+  const rows = [];
+  for (let i = 0; i < GAME_LIST.length; i += 5) {
+    const chunk = GAME_LIST.slice(i, i + 5);
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        chunk.map((g) =>
+          new ButtonBuilder().setCustomId(`game_pick_${g.key}`).setLabel(g.label).setEmoji(g.emoji).setStyle(ButtonStyle.Secondary)
+        )
       )
+    );
+  }
+
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('game_pick_other').setLabel('Others').setEmoji('➕').setStyle(ButtonStyle.Secondary)
     )
   );
-}
 
-// ---- standalone "Room Controls" panel — a SECOND message posted in the
-// game channel, separate from the pick-a-game panel above, mirroring the
-// regular temp-vc panel's look (see panelView.js). Only Lock/Unlock and Set
-// Limit are wired up here — Trust/Kick/Transfer are left out since they're
-// not actually functional yet even on the regular panel.
-
-function buildGameRoomControlsEmbed(ownerMember, tempData) {
-  const ownerName = ownerMember ? ownerMember.displayName : 'Unknown';
-  const limitText = tempData.limit && tempData.limit > 0 ? `${tempData.limit}` : 'Unlimited';
-  const lockedText = tempData.locked ? '🔒 Locked' : '🔓 Unlocked';
-  const createdLine = tempData.createdAt
-    ? `🕒 Created <t:${Math.floor(tempData.createdAt / 1000)}:R>`
-    : '';
-
-  return new EmbedBuilder()
-    .setColor(GAME_PANEL_COLOR)
-    .setTitle(`🕹️ ${toFancyBold('ROOM CONTROLS')}`)
-    .setDescription(
-      [
-        `${lockedText} • 👥 **Limit:** ${limitText}`,
-        createdLine,
-        `👑 **Owner:** ${ownerName}`,
-        '*Owner-only controls below.*',
-      ]
-        .filter(Boolean)
-        .join('\n\n')
-    );
-}
-
-function buildGameRoomControlsComponents(tempData) {
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('game_lock')
-        .setLabel(tempData.locked ? 'Unlock' : 'Lock')
-        .setEmoji(tempData.locked ? '🔓' : '🔒')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('game_limit')
-        .setLabel('Set Limit')
-        .setEmoji('👥')
-        .setStyle(ButtonStyle.Secondary)
-    ),
-  ];
+  return rows;
 }
 
 // ---- modals ----
@@ -205,48 +131,29 @@ function buildOtherGameModal() {
     );
 }
 
-// currentValue pre-fills the box (used when re-opening this modal to EDIT
-// an already-set code, so the owner doesn't have to retype it from scratch).
-function buildPartyCodeModal(currentValue) {
-  const input = new TextInputBuilder()
-    .setCustomId('game_partycode_input')
-    .setLabel('Party / lobby code')
-    .setStyle(TextInputStyle.Short)
-    .setMaxLength(30)
-    .setRequired(true);
-  if (currentValue) input.setValue(currentValue);
-
+// One shared modal for both "extra" types — label changes depending on
+// whether this game wants a party code or a specific game name.
+function buildExtraModal(extraType) {
+  const isGameName = extraType === 'name';
   return new ModalBuilder()
-    .setCustomId('game_partycode_modal')
-    .setTitle('Set Party Code')
-    .addComponents(new ActionRowBuilder().addComponents(input));
-}
-
-// Same idea as buildPartyCodeModal, but for Roblox's "which game" field.
-function buildGameNameModal(currentValue) {
-  const input = new TextInputBuilder()
-    .setCustomId('game_name_input')
-    .setLabel('Game Name')
-    .setStyle(TextInputStyle.Short)
-    .setMaxLength(50)
-    .setRequired(true);
-  if (currentValue) input.setValue(currentValue);
-
-  return new ModalBuilder()
-    .setCustomId('game_name_modal')
-    .setTitle('Set Game Name')
-    .addComponents(new ActionRowBuilder().addComponents(input));
+    .setCustomId('game_extra_modal')
+    .setTitle(isGameName ? 'Set Game Name' : 'Set Party Code')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('game_extra_input')
+          .setLabel(isGameName ? 'Which Roblox game?' : 'Party / lobby code')
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(isGameName ? 50 : 30)
+          .setRequired(true)
+      )
+    );
 }
 
 module.exports = {
   GAME_LIST,
-  getGameByKey,
-  getPromptType,
   buildGamePanelEmbed,
   buildGamePanelComponents,
-  buildGameRoomControlsEmbed,
-  buildGameRoomControlsComponents,
   buildOtherGameModal,
-  buildPartyCodeModal,
-  buildGameNameModal,
+  buildExtraModal,
 };
