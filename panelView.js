@@ -26,6 +26,7 @@ function buildPanelEmbed(ownerMember, tempData) {
     .setColor(PANEL_COLOR)
     .setTitle(`${tempData.emoji || '🔊'} Channel Panel`)
     .setDescription(`${statusLine}\n\nOwner-only controls below.`)
+    .setThumbnail(ownerMember ? ownerMember.displayAvatarURL({ size: 256 }) : null)
     .addFields({ name: 'Owner', value: `${tempData.emoji || ''} ${ownerName}`.trim() });
 }
 
