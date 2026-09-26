@@ -38,7 +38,7 @@ const GAME_LIST = [
   { key: 'rocketleague', label: 'Rocket League', emoji: '<:rocket_l128:1553240961084162118>' },
   { key: 'amongus', label: 'Among Us', emoji: '<:among_us128:1553241086926000168>', prompt: 'party' },
   { key: 'roblox', label: 'Roblox', emoji: '<:roblox128:1553241088330965113>', prompt: 'name' },
-  { key: 'mlbb', label: 'MLBB', emoji: '📱' },
+  { key: 'mlbb', label: 'MLBB', emoji: '<:3451_mlbb:1553311380684144672>' },
 ];
 
 function getGameByKey(key) {
