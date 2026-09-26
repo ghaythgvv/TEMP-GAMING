@@ -27,18 +27,18 @@ const BUTTONS_PER_ROW = 4;
 //   'name'   -> a "Game Name" modal pops up immediately (Roblox)
 //   omitted  -> no modal, the channel is just renamed straight away
 const GAME_LIST = [
-  { key: 'valorant', label: 'Valorant', emoji: '🎯', prompt: 'party' },
-  { key: 'lol', label: 'League of Legends', emoji: '🗡️' },
-  { key: 'minecraft', label: 'Minecraft', emoji: '⛏️' },
-  { key: 'fortnite', label: 'Fortnite', emoji: '🪂' },
-  { key: 'cs2', label: 'CS2', emoji: '🔫' },
-  { key: 'gtav', label: 'GTA V', emoji: '🚗' },
-  { key: 'cod', label: 'Call of Duty', emoji: '🎖️' },
-  { key: 'apex', label: 'Apex Legends', emoji: '🪐' },
-  { key: 'rocketleague', label: 'Rocket League', emoji: '🚀' },
-  { key: 'amongus', label: 'Among Us', emoji: '🛸', prompt: 'party' },
-  { key: 'roblox', label: 'Roblox', emoji: '🧱', prompt: 'name' },
-  { key: 'mlbb', label: 'MLBB', emoji: '📱' },
+  { key: 'valorant', label: 'Valorant', emoji: '<:images1:1553240634079314010>', prompt: 'party' },
+  { key: 'lol', label: 'League of Legends', emoji: '<:3907_lol:1553240599321116773>' },
+  { key: 'minecraft', label: 'Minecraft', emoji: '<:401852minecraftpelogo:1553240528471068753>' },
+  { key: 'fortnite', label: 'Fortnite', emoji: '<:481292fortnite:1553240486742065192>' },
+  { key: 'cs2', label: 'CS2', emoji: '<:28349cs21:1553240555033731252>' },
+  { key: 'gtav', label: 'GTA V', emoji: '<:450991grandtheftautov:1553240503896776765>' },
+  { key: 'cod', label: 'Call of Duty', emoji: '<:dm_call_of_duty128:1553240959700045825>' },
+  { key: 'apex', label: 'Apex Legends', emoji: '<:Apex1281:1553240957951148052>' },
+  { key: 'rocketleague', label: 'Rocket League', emoji: '<:rocket_l128:1553240961084162118>' },
+  { key: 'amongus', label: 'Among Us', emoji: '<:among_us128:1553241086926000168>', prompt: 'party' },
+  { key: 'roblox', label: 'Roblox', emoji: '<:roblox128:1553241088330965113>', prompt: 'name' },
+  { key: 'mlbb', label: 'MLBB', emoji: '<:3451_mlbb:1553311380684144672>' },
 ];
 
 function getGameByKey(key) {
