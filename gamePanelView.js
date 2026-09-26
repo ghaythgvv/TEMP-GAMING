@@ -16,22 +16,27 @@ const GAME_PANEL_COLOR = 0x8b5cf6;
 // need to switch to a select menu instead (same 25-cap reasoning as
 // EMOJI_PALETTE in the regular panel).
 //
+// NOTE: using the plain 🎮 emoji for every entry here instead of custom
+// emoji IDs, since custom emoji IDs are tied to whatever server they were
+// uploaded to and won't render anywhere else. Swap any of these back to
+// a `<:name:id>` custom emoji string once you have IDs valid for your server.
+//
 // `prompt` controls what happens right when the button is clicked:
 //   'party'  -> a "Party Code" modal pops up immediately (Valorant, Among Us)
 //   'name'   -> a "Game Name" modal pops up immediately (Roblox)
 //   omitted  -> no modal, the channel is just renamed straight away
 const GAME_LIST = [
-  { key: 'valorant', label: 'Valorant', emoji: '🎯', prompt: 'party' },
-  { key: 'lol', label: 'League of Legends', emoji: '🗡️' },
-  { key: 'minecraft', label: 'Minecraft', emoji: '⛏️' },
-  { key: 'fortnite', label: 'Fortnite', emoji: '🪂' },
-  { key: 'cs2', label: 'CS2', emoji: '🔫' },
-  { key: 'gtav', label: 'GTA V', emoji: '🚗' },
-  { key: 'cod', label: 'Call of Duty', emoji: '🎖️' },
-  { key: 'apex', label: 'Apex Legends', emoji: '🪐' },
-  { key: 'rocketleague', label: 'Rocket League', emoji: '🚀' },
-  { key: 'amongus', label: 'Among Us', emoji: '🛸', prompt: 'party' },
-  { key: 'roblox', label: 'Roblox', emoji: '🧱', prompt: 'name' },
+  { key: 'valorant', label: 'Valorant', emoji: '🎮', prompt: 'party' },
+  { key: 'lol', label: 'League of Legends', emoji: '🎮' },
+  { key: 'minecraft', label: 'Minecraft', emoji: '🎮' },
+  { key: 'fortnite', label: 'Fortnite', emoji: '🎮' },
+  { key: 'cs2', label: 'CS2', emoji: '🎮' },
+  { key: 'gtav', label: 'GTA V', emoji: '🎮' },
+  { key: 'cod', label: 'Call of Duty', emoji: '🎮' },
+  { key: 'apex', label: 'Apex Legends', emoji: '🎮' },
+  { key: 'rocketleague', label: 'Rocket League', emoji: '🎮' },
+  { key: 'amongus', label: 'Among Us', emoji: '🎮', prompt: 'party' },
+  { key: 'roblox', label: 'Roblox', emoji: '🎮', prompt: 'name' },
 ];
 
 function getGameByKey(key) {
@@ -110,13 +115,11 @@ function buildGamePanelComponents(tempData) {
     return [new ActionRowBuilder().addComponents(buttons)];
   }
 
-  // No game picked yet — show the full list, lined up evenly at 4 buttons
-  // per row (11 games + "Others" = 12, so this divides into exactly 3 full
-  // rows with nothing dangling on its own).
-  const allButtons = [...GAME_LIST, { key: 'other', label: 'Others', emoji: '➕' }];
+  // No game picked yet — show the full list, 5 buttons per row, plus an
+  // "Others" button at the end for anything not on the list.
   const rows = [];
-  for (let i = 0; i < allButtons.length; i += 4) {
-    const chunk = allButtons.slice(i, i + 4);
+  for (let i = 0; i < GAME_LIST.length; i += 5) {
+    const chunk = GAME_LIST.slice(i, i + 5);
     rows.push(
       new ActionRowBuilder().addComponents(
         chunk.map((g) =>
@@ -125,6 +128,13 @@ function buildGamePanelComponents(tempData) {
       )
     );
   }
+
+  // "Others" goes on its own row so it's never squeezed out by the 5-per-row cap.
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('game_pick_other').setLabel('Others').setEmoji('➕').setStyle(ButtonStyle.Secondary)
+    )
+  );
 
   return rows;
 }
