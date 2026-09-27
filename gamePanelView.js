@@ -29,21 +29,33 @@ const GAME_PANEL_COLOR = 0x2ecc71;
 // the moment it's picked, on top of the rename — games without one just
 // stay wherever the channel already is.
 //
+// `roleId` (when set) is this game's server role — shown as a role mention
+// in the "Selected Game" field instead of the plain game name. NOTE: most
+// of these currently equal the game's own `categoryId` — if a mention
+// below renders broken (e.g. shows as an invalid/deleted role), that means
+// this is still a category ID rather than the actual role's ID; grab the
+// real one from Server Settings → Roles → (right-click the role) → Copy
+// Role ID, and swap it in here.
+//
 // Emojis here are this server's own custom emojis (<:name:id> format).
 const GAME_LIST = [
-  { key: 'valorant', label: 'Valorant', emoji: '<:images1:1553240634079314010>', prompt: 'party', categoryId: '1513904163237658624' },
-  { key: 'lol', label: 'League of Legends', emoji: '<:3907_lol:1553240599321116773>', categoryId: '1513904166349574266' },
-  { key: 'minecraft', label: 'Minecraft', emoji: '<:401852minecraftpelogo:1553240528471068753>', categoryId: '1513904165368107059' },
-  { key: 'fortnite', label: 'Fortnite', emoji: '<:481292fortnite:1553240486742065192>', categoryId: '1513904162113454211' },
-  { key: 'cs2', label: 'CS2', emoji: '<:28349cs21:1553240555033731252>', categoryId: '1513904171349442621' },
-  { key: 'gtav', label: 'GTA V', emoji: '<:450991grandtheftautov:1553240503896776765>', categoryId: '1513904167893078148' },
+  { key: 'valorant', label: 'Valorant', emoji: '<:images1:1553240634079314010>', prompt: 'party', categoryId: '1513904163237658624', roleId: '1513904163237658624' },
+  { key: 'lol', label: 'League of Legends', emoji: '<:3907_lol:1553240599321116773>', categoryId: '1513904166349574266', roleId: '1513904166349574266' },
+  { key: 'minecraft', label: 'Minecraft', emoji: '<:401852minecraftpelogo:1553240528471068753>', categoryId: '1513904165368107059', roleId: '1513904165368107059' },
+  { key: 'fortnite', label: 'Fortnite', emoji: '<:481292fortnite:1553240486742065192>', categoryId: '1513904162113454211', roleId: '1513904162113454211' },
+  { key: 'cs2', label: 'CS2', emoji: '<:28349cs21:1553240555033731252>', categoryId: '1513904171349442621', roleId: '1513904171349442621' },
+  { key: 'gtav', label: 'GTA V', emoji: '<:450991grandtheftautov:1553240503896776765>', categoryId: '1513904167893078148', roleId: '1513904167893078148' },
   { key: 'cod', label: 'Call of Duty', emoji: '<:dm_call_of_duty128:1553240959700045825>' },
   { key: 'apex', label: 'Apex Legends', emoji: '<:Apex1281:1553240957951148052>' },
-  { key: 'rocketleague', label: 'Rocket League', emoji: '<:rocket_l128:1553240961084162118>', categoryId: '1513904163950559415' },
-  { key: 'amongus', label: 'Among Us', emoji: '<:among_us128:1553241086926000168>', prompt: 'party', categoryId: '1513904163237658624' },
-  { key: 'roblox', label: 'Roblox', emoji: '<:roblox128:1553241088330965113>', prompt: 'name', categoryId: '1513904172653613167' },
-  { key: 'mlbb', label: 'MLBB', emoji: '<:3451_mlbb:1553311380684144672>', categoryId: '1543651761292836947' },
+  { key: 'rocketleague', label: 'Rocket League', emoji: '<:rocket_l128:1553240961084162118>', categoryId: '1513904163950559415', roleId: '1513904163950559415' },
+  { key: 'amongus', label: 'Among Us', emoji: '<:among_us128:1553241086926000168>', prompt: 'party', categoryId: '1513904163237658624', roleId: '1513904159865176214' },
+  { key: 'roblox', label: 'Roblox', emoji: '<:roblox128:1553241088330965113>', prompt: 'name', categoryId: '1513904172653613167', roleId: '1513904172653613167' },
+  { key: 'mlbb', label: 'MLBB', emoji: '<:3451_mlbb:1553311380684144672>', categoryId: '1543651761292836947', roleId: '1543651761292836947' },
 ];
+
+function getGameByKey(key) {
+  return GAME_LIST.find((g) => g.key === key) || null;
+}
 
 // ---- embed ----
 
@@ -69,12 +81,21 @@ function buildGamePanelEmbed(member, tempData, memberCount) {
   const stateText = `${tempData.locked ? '🔒 Locked' : '🔓 Unlocked'} · ${tempData.mutedAll ? '🔇 Muted' : '🔊 Unmuted'}`;
   const createdText = tempData.createdAt ? `<t:${Math.floor(tempData.createdAt / 1000)}:R>` : 'Unknown';
 
+  // Selected Game shows a role mention when this game (looked up by the
+  // key saved on tempData) has a roleId configured above. Games picked via
+  // the "Others" modal have no gameKey/roleId, so they fall back to the
+  // plain backticked name — same as before.
+  const pickedGame = tempData.gameKey ? getGameByKey(tempData.gameKey) : null;
+  const selectedGameValue = pickedGame && pickedGame.roleId
+    ? `${tempData.gameEmoji || '🎮'} <@&${pickedGame.roleId}>`
+    : `${tempData.gameEmoji || '🎮'} \`${tempData.game}\``;
+
   embed
     .setTitle('🕹️ Room Controls')
     .setDescription('Welcome to your Game Room!\nThis is your control panel — use it wisely,\nEnjoy your gaming experience.')
     .addFields(
       { name: 'Room Owner', value: ownerTag, inline: false },
-      { name: 'Selected Game', value: `${tempData.gameEmoji || '🎮'} \`${tempData.game}\``, inline: false },
+      { name: 'Selected Game', value: selectedGameValue, inline: false },
       { name: 'Limit', value: limitText, inline: true },
       { name: 'In Room', value: roomCountText, inline: true },
       { name: 'State', value: stateText, inline: false },
@@ -118,10 +139,10 @@ function buildGamePanelComponents(tempData) {
 
   // Game picked — full Room Controls button set.
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('game_limit_open').setLabel('Limit').setEmoji('👥').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('game_limit_open').setLabel('Limit').setEmoji('<:1000035570_purple_glow:1553472892111560754>').setStyle(ButtonStyle.Secondary),
     tempData.locked
       ? new ButtonBuilder().setCustomId('game_lock').setLabel('Unlock').setEmoji('<:unlock_purple_glow:1553483080998588456>').setStyle(ButtonStyle.Secondary)
-      : new ButtonBuilder().setCustomId('game_lock').setLabel('Lock').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
+      : new ButtonBuilder().setCustomId('game_lock').setLabel('Lock').setEmoji('<:1000035572_purple_glow:1553472894976393246>').setStyle(ButtonStyle.Secondary),
     tempData.mutedAll
       ? new ButtonBuilder().setCustomId('game_muteall').setLabel('Unmute All').setEmoji('<:1000035589_no_x_purple_glow:1553558390397993070>').setStyle(ButtonStyle.Secondary)
       : new ButtonBuilder().setCustomId('game_muteall').setLabel('Mute All').setEmoji('<:1000035589_purple_glow:1553558391753015306>').setStyle(ButtonStyle.Secondary),
@@ -235,6 +256,7 @@ function buildUserSelectRow(customId, placeholder) {
 
 module.exports = {
   GAME_LIST,
+  getGameByKey,
   buildGamePanelEmbed,
   buildGamePanelComponents,
   buildOtherGameModal,
