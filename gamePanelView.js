@@ -1,245 +1,652 @@
-const {
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  UserSelectMenuBuilder,
-} = require('discord.js');
+const { ChannelType } = require('discord.js');
+const storage = require('./storage');
+const { randomEmoji } = require('./emojiPalette');
+const { applyEmojiToMember, removeEmojiFromMember, stripEmojiPrefixes } = require('./nickname');
+const { buildPanelEmbed, buildPanelComponents, buildPanelAttachments } = require('./panelView');
+const { buildGamePanelEmbed, buildGamePanelComponents } = require('./gamePanelView');
+const { refreshDashboard } = require('./dashboard');
 
-// Green theme, distinct from the purple regular temp-vc panel.
-const GAME_PANEL_COLOR = 0x2ecc71;
+const pendingDeletions = new Set(); // channelIds with a delete check already queued
 
-// The buttoned game list. Add/remove entries freely — 5 buttons fit per
-// row and Discord allows up to 5 rows, so this can grow to 25 before you'd
-// need to switch to a select menu instead (same 25-cap reasoning as
-// EMOJI_PALETTE in the regular panel).
-//
-// `prompt` controls the optional second field/button shown once this game
-// is picked:
-//   'party' -> "Party Code" (Valorant, Among Us — games with a single
-//              lobby/party code you invite people with)
-//   'name'  -> "Game Name" (Roblox — the platform itself isn't the game,
-//              so this captures which Roblox experience it is)
-//   undefined -> no extra field
-//
-// `categoryId` (when set) moves the channel into that game's own category
-// the moment it's picked, on top of the rename — games without one just
-// stay wherever the channel already is.
-//
-// Emojis here are this server's own custom emojis (<:name:id> format).
-const GAME_LIST = [
-  { key: 'valorant', label: 'Valorant', emoji: '<:images1:1553240634079314010>', prompt: 'party', categoryId: '1513904163237658624' },
-  { key: 'lol', label: 'League of Legends', emoji: '<:3907_lol:1553240599321116773>', categoryId: '1513904166349574266' },
-  { key: 'minecraft', label: 'Minecraft', emoji: '<:401852minecraftpelogo:1553240528471068753>', categoryId: '1513904165368107059' },
-  { key: 'fortnite', label: 'Fortnite', emoji: '<:481292fortnite:1553240486742065192>', categoryId: '1513904162113454211' },
-  { key: 'cs2', label: 'CS2', emoji: '<:28349cs21:1553240555033731252>', categoryId: '1513904171349442621' },
-  { key: 'gtav', label: 'GTA V', emoji: '<:450991grandtheftautov:1553240503896776765>', categoryId: '1513904167893078148' },
-  { key: 'cod', label: 'Call of Duty', emoji: '<:dm_call_of_duty128:1553240959700045825>' },
-  { key: 'apex', label: 'Apex Legends', emoji: '<:Apex1281:1553240957951148052>' },
-  { key: 'rocketleague', label: 'Rocket League', emoji: '<:rocket_l128:1553240961084162118>', categoryId: '1513904163950559415' },
-  { key: 'amongus', label: 'Among Us', emoji: '<:among_us128:1553241086926000168>', prompt: 'party', categoryId: '1513904163237658624' },
-  { key: 'roblox', label: 'Roblox', emoji: '<:roblox128:1553241088330965113>', prompt: 'name', categoryId: '1513904172653613167' },
-  { key: 'mlbb', label: 'MLBB', emoji: '<:3451_mlbb:1553311380684144672>', categoryId: '1543651761292836947' },
-];
+// Emoji used on every game channel's name — fixed, not per-user, since game
+// channels aren't tied to a synced nickname emoji the way regular temp
+// channels are.
+const GAME_CHANNEL_EMOJI = '🎮';
 
-// ---- embed ----
+// Fixed (non-temp) voice channels that should still sync their emoji onto
+// anyone sitting in them, same as temp channels do — just for these two
+// specific static channels rather than every generated temp channel.
+const STATIC_EMOJI_SYNC_CHANNEL_IDS = new Set([
+  '1517940974125318166',
+  '1517941337700176003',
+  '1543001094781665370',
+  '1513904253423587451',
+  '1519068432316760286',
+  '1543346189276160241',
+]);
 
-function buildGamePanelEmbed(member, tempData, memberCount) {
-  const ownerName = member ? member.displayName : 'Unknown';
-  const embed = new EmbedBuilder().setColor(GAME_PANEL_COLOR);
-  if (member) embed.setThumbnail(member.displayAvatarURL({ size: 256 }));
-
-  // Before a game is picked: simple picker screen, no stats yet.
-  if (!tempData.game) {
-    embed
-      .setTitle('🎮 Game Channel')
-      .setDescription(
-        'Welcome to your Game Room!\nThis is your control panel — use it wisely,\nEnjoy your gaming experience.\n\nPick a game below to get started.'
-      )
-      .addFields({ name: 'Room Owner', value: ownerName });
-    return embed;
-  }
-
-  // After a game is picked: the full "Room Controls" style stats view.
-  const limitText = tempData.limit && tempData.limit > 0 ? `${tempData.limit}` : 'Unlimited';
-  const roomCountText = `${memberCount ?? 0}/${tempData.limit && tempData.limit > 0 ? tempData.limit : '∞'}`;
-  const stateText = `${tempData.locked ? '🔒 Locked' : '🔓 Unlocked'} · ${tempData.mutedAll ? '🔇 Muted' : '🔊 Unmuted'}`;
-  const createdText = tempData.createdAt ? `<t:${Math.floor(tempData.createdAt / 1000)}:R>` : 'Unknown';
-
-  embed
-    .setTitle('🕹️ Room Controls')
-    .setDescription('Welcome to your Game Room!\nThis is your control panel — use it wisely,\nEnjoy your gaming experience.')
-    .addFields(
-      { name: 'Room Owner', value: ownerName, inline: false },
-      { name: 'Selected Game', value: `${tempData.gameEmoji || '🎮'} ${tempData.game}`, inline: false },
-      { name: 'Limit', value: limitText, inline: true },
-      { name: 'In Room', value: roomCountText, inline: true },
-      { name: 'State', value: stateText, inline: false },
-    );
-
-  if (tempData.extraType === 'party') {
-    embed.addFields({ name: 'Party Code', value: tempData.extraValue ? `\`${tempData.extraValue}\`` : '—', inline: false });
-  } else if (tempData.extraType === 'name') {
-    embed.addFields({ name: 'Game Name', value: tempData.extraValue || '—', inline: false });
-  }
-
-  embed.addFields({ name: 'Created', value: createdText, inline: false });
-
-  return embed;
+// Grabs whatever emoji the channel's own name starts with, so renaming the
+// channel automatically changes what gets applied — no separate config to
+// keep in sync. No trailing-space requirement here (channel names often
+// don't have one), unlike the nickname-prefix matcher in nickname.js.
+const LEADING_EMOJI_RE = /^\p{Extended_Pictographic}\uFE0F?/u;
+function getChannelLeadingEmoji(channel) {
+  const match = channel?.name?.match(LEADING_EMOJI_RE);
+  return match ? match[0] : null;
 }
 
-// ---- buttons ----
+// Discord's channel-name validation rejects a few things that easily slip
+// into a name built from someone's raw display name: repeated whitespace,
+// leading/trailing whitespace, and it enforces a 100-character cap. This
+// keeps the generated name inside those rules instead of finding out via a
+// failed API call.
+function sanitizeChannelName(name) {
+  return name
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100);
+}
 
-function buildGamePanelComponents(tempData) {
-  if (!tempData.game) {
-    // No game picked yet — show the full list, 5 buttons per row, plus an
-    // "Others" button on its own row at the end.
-    const rows = [];
-    for (let i = 0; i < GAME_LIST.length; i += 5) {
-      const chunk = GAME_LIST.slice(i, i + 5);
-      rows.push(
-        new ActionRowBuilder().addComponents(
-          chunk.map((g) =>
-            new ButtonBuilder().setCustomId(`game_pick_${g.key}`).setLabel(g.label).setEmoji(g.emoji).setStyle(ButtonStyle.Secondary)
-          )
-        )
-      );
+// Extra permissions the channel owner gets on their own channel, on top of
+// whatever the panel buttons already let them do — mainly so they can also
+// use Discord's own right-click menu to move/mute/deafen people in it, and
+// so locking the channel can never lock the owner out of their own channel.
+const OWNER_CHANNEL_PERMISSIONS = {
+  ManageChannels: true,
+  Connect: true,
+};
+
+async function updateOwnerPermissions(channel, oldOwnerId, newOwnerId) {
+  try {
+    if (oldOwnerId && oldOwnerId !== newOwnerId) {
+      await channel.permissionOverwrites.delete(oldOwnerId).catch(() => {});
     }
-    rows.push(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('game_pick_other').setLabel('Others').setEmoji('➕').setStyle(ButtonStyle.Secondary)
-      )
-    );
-    return rows;
+    if (newOwnerId) {
+      await channel.permissionOverwrites.edit(newOwnerId, OWNER_CHANNEL_PERMISSIONS);
+    }
+  } catch (err) {
+    console.warn(`[permissions] could not update owner overwrite: ${err.message}`);
+  }
+}
+
+// Saves the channel's current name/limit/locked/trusted state under its
+// owner, so the next channel that owner creates can start off the same way.
+// Called right before a temp channel is torn down, wherever that happens.
+// Game channels are session-based (the game picked has no reason to carry
+// over to the next one) so they're skipped here entirely.
+function snapshotOwnerSettings(tempData) {
+  if (!tempData || !tempData.ownerId) return;
+  if (tempData.type === 'game') return;
+  storage.setUserSettings(tempData.ownerId, {
+    customName: tempData.customName || null,
+    limit: tempData.limit || 0,
+    locked: !!tempData.locked,
+    trusted: tempData.trusted || [],
+    cleanupIntervalMinutes:
+      typeof tempData.cleanupIntervalMinutes === 'number' ? tempData.cleanupIntervalMinutes : 10,
+  });
+}
+
+// The one place a temp channel actually gets deleted — snapshots the
+// owner's settings first, then clears the live record, then removes the
+// Discord channel itself. Shared by regular temp channels and game
+// channels alike.
+async function destroyTempChannel(guild, channel, channelId, tempData) {
+  snapshotOwnerSettings(tempData);
+  storage.deleteTempChannel(channelId);
+  if (channel) {
+    await channel.delete().catch(() => {});
+  }
+  await refreshDashboard(guild).catch(() => {});
+}
+
+// Re-renders the panel embed/buttons in place after a setting changes
+// (lock state, limit, emoji, owner, etc.) so the status lines shown to the
+// owner never go stale. Safe to call even if the panel message was somehow
+// deleted — it just quietly does nothing. Regular temp-channel panel only;
+// game channels are refreshed inline via interaction.update() instead.
+async function refreshPanelMessage(channel, tempData) {
+  if (!tempData || !tempData.panelMessageId) return;
+  try {
+    const ownerMember = await channel.guild.members.fetch(tempData.ownerId).catch(() => null);
+    let message = await channel.messages.fetch(tempData.panelMessageId).catch(() => null);
+    if (!message) {
+      // Self-healing: the panel message is gone (deleted by accident, wiped
+      // by a bug, whatever) — repost a fresh one instead of leaving the
+      // channel without any controls at all.
+      console.warn(`[tempvc] panel message missing in ${channel.name} — reposting a new one`);
+      try {
+        message = await channel.send({
+          embeds: [buildPanelEmbed(ownerMember, tempData)],
+          components: buildPanelComponents(),
+          files: buildPanelAttachments(),
+        });
+        tempData.panelMessageId = message.id;
+        storage.setTempChannel(channel.id, tempData);
+      } catch (err) {
+        console.warn(`[tempvc] could not repost missing panel in ${channel.name}: ${err.message}`);
+      }
+      return;
+    }
+    await message.edit({
+      embeds: [buildPanelEmbed(ownerMember, tempData)],
+      components: buildPanelComponents(),
+      files: buildPanelAttachments(),
+    });
+  } catch (err) {
+    console.warn(`[tempvc] could not refresh panel message: ${err.message}`);
+  }
+}
+
+async function createTempChannel(member, guild, config) {
+  const emoji = storage.getUserEmoji(member.id) || randomEmoji();
+  const saved = storage.getUserSettings(member.id);
+  // member.displayName can still have a stuck emoji prefix on it if an
+  // earlier nickname edit failed (e.g. the bot's role sits below this
+  // member's role, so Discord silently rejected the rename). Stripping it
+  // here too — not just in nickname.js — is what stops that leftover emoji
+  // from also leaking into the new channel's name and showing up doubled.
+  const cleanDisplayName = stripEmojiPrefixes(member.displayName);
+  const baseName = (saved && saved.customName) || `${cleanDisplayName}'s Channel`;
+  const channelName = sanitizeChannelName(`${emoji} ${baseName}`);
+
+  let channel;
+  try {
+    channel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildVoice,
+      parent: config.categoryId || null,
+      userLimit: (saved && saved.limit) || 0,
+    });
+  } catch (err) {
+    console.warn(`[tempvc] rejected name "${channelName}" (${err.message}) — retrying with a plain fallback name`);
+    try {
+      channel = await guild.channels.create({
+        name: `${emoji} Channel`.slice(0, 100),
+        type: ChannelType.GuildVoice,
+        parent: config.categoryId || null,
+        userLimit: (saved && saved.limit) || 0,
+      });
+    } catch (err2) {
+      console.error(`[tempvc] could not create a temp channel for ${member.user.tag} even with a fallback name: ${err2.message}`);
+      return;
+    }
   }
 
-  // Game picked — full Room Controls button set.
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('game_limit_open').setLabel('Limit').setEmoji('👥').setStyle(ButtonStyle.Secondary),
-    tempData.locked
-      ? new ButtonBuilder().setCustomId('game_lock').setLabel('Unlock').setEmoji('<:unlock_purple_glow:1553483080998588456>').setStyle(ButtonStyle.Secondary)
-      : new ButtonBuilder().setCustomId('game_lock').setLabel('Lock').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
-    tempData.mutedAll
-      ? new ButtonBuilder().setCustomId('game_muteall').setLabel('Unmute All').setEmoji('<:1000035589_no_x_purple_glow:1553558390397993070>').setStyle(ButtonStyle.Secondary)
-      : new ButtonBuilder().setCustomId('game_muteall').setLabel('Mute All').setEmoji('<:1000035589_purple_glow:1553558391753015306>').setStyle(ButtonStyle.Secondary),
-  );
+  const tempDataRecord = {
+    guildId: guild.id,
+    ownerId: member.id,
+    emoji,
+    customName: (saved && saved.customName) || null,
+    limit: (saved && saved.limit) || 0,
+    locked: !!(saved && saved.locked),
+    trusted: (saved && saved.trusted) || [],
+    // Defaults to 10 minutes unless the owner has changed it before and it
+    // got carried over via their saved profile.
+    cleanupIntervalMinutes:
+      saved && typeof saved.cleanupIntervalMinutes === 'number' ? saved.cleanupIntervalMinutes : 10,
+    lastPurgeAt: Date.now(),
+    createdAt: Date.now(),
+  };
+  storage.setTempChannel(channel.id, tempDataRecord);
 
-  const row2Buttons = [];
-  if (tempData.extraType === 'party') {
-    row2Buttons.push(
-      new ButtonBuilder().setCustomId('game_extra_open').setLabel('Party Code').setEmoji('<:1000035588_purple_glow:1553558393023897610>').setStyle(ButtonStyle.Primary)
-    );
-  } else if (tempData.extraType === 'name') {
-    row2Buttons.push(
-      new ButtonBuilder().setCustomId('game_extra_open').setLabel('Game Name').setEmoji('🎲').setStyle(ButtonStyle.Primary)
+  await updateOwnerPermissions(channel, null, member.id);
+
+  // Restore the locked state and re-grant anyone who was trusted before —
+  // do this before anyone (including the owner) actually joins.
+  if (saved && saved.locked) {
+    await channel.permissionOverwrites.edit(guild.roles.everyone, { Connect: false }).catch(() => {});
+  }
+  if (saved && saved.trusted && saved.trusted.length) {
+    // Grant every trusted user's permission at once instead of waiting on
+    // each one sequentially — meaningfully faster for anyone with a long
+    // trusted list, with no downside since they don't depend on each other.
+    await Promise.all(
+      saved.trusted.map((userId) =>
+        channel.permissionOverwrites.edit(userId, { Connect: true }).catch(() => {})
+      )
     );
   }
-  row2Buttons.push(
-    new ButtonBuilder().setCustomId('game_rename_open').setLabel('Rename').setEmoji('<:1000035568_purple_glow:1553472888906977300>').setStyle(ButtonStyle.Secondary)
-  );
-  const row2 = new ActionRowBuilder().addComponents(row2Buttons);
 
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('game_access_open').setLabel('Access').setEmoji('<:positivo:1553555472811040788>').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('game_kick_open').setLabel('Kick').setEmoji('<:1000035576_purple_glow:1553472901301280870>').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('game_block_open').setLabel('Block').setEmoji('⛔').setStyle(ButtonStyle.Danger),
-  );
+  // Post the control panel right in this channel's own chat, so it's there
+  // the moment anyone opens it — no need to go find a shared panel channel.
+  // The message id gets saved so later setting changes (lock, limit, emoji,
+  // transfer) can refresh this same message's status lines in place.
+  try {
+    const panelMessage = await channel.send({
+      embeds: [buildPanelEmbed(member, tempDataRecord)],
+      components: buildPanelComponents(),
+      files: buildPanelAttachments(),
+    });
+    tempDataRecord.panelMessageId = panelMessage.id;
+    storage.setTempChannel(channel.id, tempDataRecord);
+  } catch (err) {
+    console.warn(`[tempvc] could not post the panel in ${channel.name}: ${err.message}`);
+  }
 
-  const row4 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('game_change').setLabel('Change Game').setEmoji('🔄').setStyle(ButtonStyle.Secondary)
-  );
+  try {
+    await member.voice.setChannel(channel);
+  } catch (err) {
+    console.warn(`[tempvc] could not move ${member.user.tag} into their new channel: ${err.message}`);
+    await channel.delete().catch(() => {});
+    storage.deleteTempChannel(channel.id);
+  }
 
-  return [row1, row2, row3, row4];
+  await refreshDashboard(guild).catch(() => {});
 }
 
-// ---- modals ----
+// Same shape as createTempChannel, but for the game join-to-create channel:
+// no per-user emoji/name/limit restore, no nickname sync — just a fresh
+// "🎮 Game" room with the game-picker panel posted in it.
+async function createGameChannel(member, guild, config) {
+  const channelName = sanitizeChannelName(`${GAME_CHANNEL_EMOJI} Game`);
 
-function buildOtherGameModal() {
-  return new ModalBuilder()
-    .setCustomId('game_other_modal')
-    .setTitle('What game are you playing?')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('game_other_name')
-          .setLabel('Game name')
-          .setStyle(TextInputStyle.Short)
-          .setMaxLength(50)
-          .setRequired(true)
-      )
-    );
+  let channel;
+  try {
+    channel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildVoice,
+      parent: config.gameCategoryId || null,
+    });
+  } catch (err) {
+    console.error(`[gamevc] could not create a game channel for ${member.user.tag}: ${err.message}`);
+    return;
+  }
+
+  const tempDataRecord = {
+    guildId: guild.id,
+    ownerId: member.id,
+    type: 'game',
+    emoji: GAME_CHANNEL_EMOJI,
+    game: null,
+    gameEmoji: null,
+    limit: 0,
+    locked: false,
+    mutedAll: false,
+    extraType: null,
+    extraValue: null,
+    createdAt: Date.now(),
+  };
+  storage.setTempChannel(channel.id, tempDataRecord);
+
+  await updateOwnerPermissions(channel, null, member.id);
+
+  try {
+    const panelMessage = await channel.send({
+      content: `<@${member.id}> pick a game below`,
+      embeds: [buildGamePanelEmbed(member, tempDataRecord, channel.members.size)],
+      components: buildGamePanelComponents(tempDataRecord),
+    });
+    tempDataRecord.panelMessageId = panelMessage.id;
+    storage.setTempChannel(channel.id, tempDataRecord);
+  } catch (err) {
+    console.warn(`[gamevc] could not post the game panel in ${channel.name}: ${err.message}`);
+  }
+
+  try {
+    await member.voice.setChannel(channel);
+  } catch (err) {
+    console.warn(`[gamevc] could not move ${member.user.tag} into their new game channel: ${err.message}`);
+    await channel.delete().catch(() => {});
+    storage.deleteTempChannel(channel.id);
+    return;
+  }
+
+  await refreshDashboard(guild).catch(() => {});
 }
 
-// One shared modal for both "extra" types — label changes depending on
-// whether this game wants a party code or a specific game name.
-function buildExtraModal(extraType) {
-  const isGameName = extraType === 'name';
-  return new ModalBuilder()
-    .setCustomId('game_extra_modal')
-    .setTitle(isGameName ? 'Set Game Name' : 'Set Party Code')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('game_extra_input')
-          .setLabel(isGameName ? 'Which Roblox game?' : 'Party / lobby code')
-          .setStyle(TextInputStyle.Short)
-          .setMaxLength(isGameName ? 50 : 30)
-          .setRequired(true)
-      )
-    );
+// Renders text in the "Mathematical Sans-Serif Bold" Unicode block — the
+// ★𝗟𝗜𝗞𝗘 𝗧𝗛𝗜𝗦★ look. This is real Unicode text, not an image or custom
+// emoji, so it's safe to use in a channel name (custom emojis like
+// <:name:id> are NOT safe there — Discord just shows the raw tag text).
+function toStylizedBold(text) {
+  return text.replace(/[A-Za-z0-9]/g, (ch) => {
+    const code = ch.codePointAt(0);
+    if (code >= 65 && code <= 90) return String.fromCodePoint(0x1d5d4 + (code - 65)); // A-Z
+    if (code >= 97 && code <= 122) return String.fromCodePoint(0x1d5ee + (code - 97)); // a-z
+    if (code >= 48 && code <= 57) return String.fromCodePoint(0x1d7ec + (code - 48)); // 0-9
+    return ch;
+  });
 }
 
-function buildLimitModal(currentLimit) {
-  return new ModalBuilder()
-    .setCustomId('game_limit_modal')
-    .setTitle('Set User Limit')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('game_limit_input')
-          .setLabel('Max users (0 = unlimited, max 99)')
-          .setStyle(TextInputStyle.Short)
-          .setValue(currentLimit ? `${currentLimit}` : '0')
-          .setMaxLength(2)
-          .setRequired(true)
-      )
-    );
+// Renames a game channel to match the picked game and records it in
+// storage. Used both for the fixed game-list buttons and the "Other" modal.
+// Returns true if the rename actually went through — Discord only allows a
+// channel to be renamed twice every 10 minutes, so this can come back
+// false even though everything else about the pick succeeded.
+async function setChannelGame(channel, tempData, channelId, gameName, emoji, categoryId) {
+  const stylized = toStylizedBold(gameName.toUpperCase());
+  const finalName = sanitizeChannelName(`★${stylized}★`);
+  let renamed = true;
+  const editPayload = { name: finalName };
+  if (categoryId) editPayload.parent = categoryId;
+  // One combined edit call (name + category together) instead of two
+  // separate API calls — friendlier to Discord's per-channel rate limit.
+  await channel.edit(editPayload).catch((err) => {
+    renamed = false;
+    console.warn(`[gamevc] could not update channel to "${finalName}"${categoryId ? ` (category ${categoryId})` : ''}: ${err.message}`);
+  });
+  tempData.game = gameName;
+  tempData.gameEmoji = emoji; // still used for the embed title, just not the channel name
+  storage.setTempChannel(channelId, tempData);
+  return renamed;
 }
 
-function buildRenameModal() {
-  return new ModalBuilder()
-    .setCustomId('game_rename_modal')
-    .setTitle('Rename Channel')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('game_rename_input')
-          .setLabel('New channel name')
-          .setStyle(TextInputStyle.Short)
-          .setMaxLength(100)
-          .setRequired(true)
-      )
-    );
+// Same idea as refreshPanelMessage above, but for the game panel — needed
+// so "In Room: x/y" stays accurate as people join/leave, not just when a
+// button gets clicked.
+async function refreshGamePanelMessage(channel, tempData) {
+  if (!tempData || !tempData.panelMessageId) return;
+  try {
+    const ownerMember = await channel.guild.members.fetch(tempData.ownerId).catch(() => null);
+    const message = await channel.messages.fetch(tempData.panelMessageId).catch(() => null);
+    if (!message) return; // self-healing repost isn't critical here, unlike the regular panel
+    await message.edit({
+      embeds: [buildGamePanelEmbed(ownerMember, tempData, channel.members.size)],
+      components: buildGamePanelComponents(tempData),
+    });
+  } catch (err) {
+    console.warn(`[gamevc] could not refresh game panel message: ${err.message}`);
+  }
 }
 
-// ---- user select menus (Access / Kick / Block) ----
+async function onJoinTracked(member, tempData) {
+  if (tempData.type === 'game') {
+    // Mute-all is "sticky" — anyone who joins while it's on gets muted too,
+    // not just whoever was in the channel when it was switched on. The
+    // owner is exempt so they always keep control of their own room.
+    if (tempData.mutedAll && member.id !== tempData.ownerId) {
+      await member.voice.setMute(true).catch(() => {});
+    }
+    return; // game channels don't sync a nickname emoji
+  }
+  await applyEmojiToMember(member, tempData.emoji);
+}
 
-function buildUserSelectRow(customId, placeholder) {
-  return new ActionRowBuilder().addComponents(
-    new UserSelectMenuBuilder().setCustomId(customId).setPlaceholder(placeholder).setMinValues(1).setMaxValues(1)
-  );
+async function onLeaveTracked(member, channelId, guild, tempData) {
+  if (!tempData) {
+    scheduleEmptyCheck(channelId, guild);
+    return;
+  }
+  if (tempData.type !== 'game') {
+    await removeEmojiFromMember(member);
+  }
+  scheduleEmptyCheck(channelId, guild);
+}
+
+// Checks (and deletes) an empty channel as soon as the current event-loop
+// tick clears, instead of waiting on a fixed timer. That still lets any
+// voice state update that's already in flight (e.g. someone else moving
+// into this same channel right as the last person leaves) get applied
+// first, so an about-to-be-occupied channel doesn't get deleted out from
+// under them — it just doesn't add unnecessary extra delay on top of that.
+function scheduleEmptyCheck(channelId, guild) {
+  if (pendingDeletions.has(channelId)) return;
+  pendingDeletions.add(channelId);
+  setImmediate(async () => {
+    pendingDeletions.delete(channelId);
+    const tempData = storage.getTempChannel(channelId);
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel) {
+      snapshotOwnerSettings(tempData);
+      storage.deleteTempChannel(channelId);
+      await refreshDashboard(guild).catch(() => {});
+      return;
+    }
+    if (channel.members.size === 0) {
+      await destroyTempChannel(guild, channel, channelId, tempData);
+    }
+  });
+}
+
+async function handleVoiceStateUpdate(oldState, newState) {
+  const guild = newState.guild || oldState.guild;
+  const member = newState.member || oldState.member;
+  if (!member || member.user.bot) return;
+
+  const oldChannelId = oldState.channelId;
+  const newChannelId = newState.channelId;
+  if (oldChannelId === newChannelId) return;
+
+  const joinedStaticChannel = newChannelId && STATIC_EMOJI_SYNC_CHANNEL_IDS.has(newChannelId);
+  const leftStaticChannel = oldChannelId && STATIC_EMOJI_SYNC_CHANNEL_IDS.has(oldChannelId);
+
+  const config = storage.getGuildConfig(guild.id);
+  const oldTempData = oldChannelId ? storage.getTempChannel(oldChannelId) : null;
+
+  // Always resolve any "leaving" cleanup FIRST — whether that's a temp
+  // channel's own emoji tracking or a static synced channel — before
+  // applying whatever emoji the destination calls for. Doing this in the
+  // opposite order let a temp channel's leave-cleanup strip an emoji that
+  // had just been applied a moment earlier by joining a static channel.
+  if (oldTempData) {
+    await onLeaveTracked(member, oldChannelId, guild, oldTempData);
+    if (oldTempData.type === 'game') {
+      const oldChannel = guild.channels.cache.get(oldChannelId);
+      if (oldChannel) await refreshGamePanelMessage(oldChannel, oldTempData);
+    }
+  } else if (leftStaticChannel && !joinedStaticChannel) {
+    await removeEmojiFromMember(member);
+  }
+
+  if (joinedStaticChannel) {
+    const channel = guild.channels.cache.get(newChannelId);
+    const emoji = getChannelLeadingEmoji(channel);
+    if (emoji) await applyEmojiToMember(member, emoji);
+  }
+
+  if (!config) return;
+
+  if (newChannelId === config.joinToCreateId) {
+    await createTempChannel(member, guild, config);
+    return;
+  }
+
+  if (newChannelId === config.gameJoinToCreateId) {
+    await createGameChannel(member, guild, config);
+    return;
+  }
+
+  if (newChannelId) {
+    const newTempData = storage.getTempChannel(newChannelId);
+    if (newTempData) {
+      await onJoinTracked(member, newTempData);
+      if (newTempData.type === 'game') {
+        const newChannel = guild.channels.cache.get(newChannelId);
+        if (newChannel) await refreshGamePanelMessage(newChannel, newTempData);
+      }
+    }
+  }
+}
+
+// Deletes any tracked channel that's empty right now. Used on a timer and at
+// startup so the bot cleans up properly even after a restart or brief outage.
+async function sweepEmptyChannels(client) {
+  const all = storage.getAllTempChannels();
+  for (const channelId of Object.keys(all)) {
+    const data = all[channelId];
+    const guild = client.guilds.cache.get(data.guildId);
+    if (!guild) continue;
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel) {
+      snapshotOwnerSettings(data);
+      storage.deleteTempChannel(channelId);
+      await refreshDashboard(guild).catch(() => {});
+      continue;
+    }
+    if (channel.members.size === 0) {
+      await destroyTempChannel(guild, channel, channelId, data);
+    }
+  }
+}
+
+async function reconcileOnStartup(client) {
+  await sweepEmptyChannels(client);
+  startPeriodicCleanup(client);
+}
+
+// Wipes every message in a temp channel's text chat except the panel itself,
+// so the chat doesn't fill up with clutter over time.
+async function purgeChannelMessages(channel, tempData) {
+  // Without a known panel message id, we can't safely tell the panel apart
+  // from anything else — skip this channel rather than risk deleting it.
+  // This only affects channels created before panelMessageId existed; any
+  // channel created from now on will always have one.
+  if (!tempData || !tempData.panelMessageId) {
+    console.warn(`[cleanup] skipping ${channel.name} — no known panel message id`);
+    return;
+  }
+  try {
+    // fetch({ limit: 100 }) only ever returns one page — a channel with more
+    // than 100 messages needs repeated passes to actually get emptied out.
+    // Loop until a fetch comes back with nothing left to delete.
+    let totalDeleted = 0;
+    while (true) {
+      const messages = await channel.messages.fetch({ limit: 100 });
+      const toDelete = messages.filter((m) => m.id !== tempData.panelMessageId);
+      if (toDelete.size === 0) break;
+
+      if (toDelete.size === 1) {
+        await toDelete.first().delete().catch(() => {});
+        totalDeleted += 1;
+      } else {
+        // Discord's bulk delete refuses messages older than 14 days; passing
+        // `true` here tells discord.js to silently skip those instead of
+        // throwing and aborting the whole batch.
+        const deleted = await channel.bulkDelete(toDelete, true).catch((err) => {
+          console.warn(`[cleanup] bulkDelete failed in ${channel.name}: ${err.message}`);
+          return null;
+        });
+        if (!deleted) break; // avoid looping forever on a repeated failure
+        totalDeleted += deleted.size;
+        // bulkDelete silently skips messages older than 14 days rather than
+        // deleting them — if none of this batch was actually removable,
+        // stop instead of re-fetching the same stuck messages forever.
+        if (deleted.size === 0) break;
+      }
+
+      // If this fetch returned fewer than the full page, there's nothing
+      // more to page through.
+      if (messages.size < 100) break;
+    }
+    if (totalDeleted > 0) {
+      console.log(`[cleanup] deleted ${totalDeleted} message(s) in ${channel.name}`);
+    }
+  } catch (err) {
+    console.warn(`[cleanup] could not purge messages in ${channel.name}: ${err.message}`);
+  }
+}
+
+async function purgeAllTempChannels(client) {
+  const all = storage.getAllTempChannels();
+  const now = Date.now();
+  for (const channelId of Object.keys(all)) {
+    const data = all[channelId];
+    // 0 (or missing, for very old records, or for game channels which never
+    // set this) means auto-delete is off for this channel — skip it
+    // entirely rather than defaulting it on.
+    const intervalMinutes = data.cleanupIntervalMinutes;
+    if (!intervalMinutes) continue;
+
+    const dueAt = (data.lastPurgeAt || data.createdAt || 0) + intervalMinutes * 60 * 1000;
+    if (now < dueAt) continue;
+
+    const guild = client.guilds.cache.get(data.guildId);
+    if (!guild) continue;
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel) continue;
+
+    await purgeChannelMessages(channel, data);
+    data.lastPurgeAt = now;
+    storage.setTempChannel(channelId, data);
+    await refreshPanelMessage(channel, data); // updates the countdown to the next run
+  }
+}
+
+// Checked every minute rather than run on a single fixed timer, so each
+// channel's own interval (5 min, 30 min, 1 hour, etc.) is respected
+// independently instead of everyone sharing one global schedule.
+const CLEANUP_CHECK_INTERVAL_MS = 60 * 1000;
+let cleanupIntervalStarted = false;
+
+function startPeriodicCleanup(client) {
+  if (cleanupIntervalStarted) return; // guard against double-registration on reconnect
+  cleanupIntervalStarted = true;
+  setInterval(() => {
+    purgeAllTempChannels(client).catch((err) => console.warn(`[cleanup] sweep failed: ${err.message}`));
+  }, CLEANUP_CHECK_INTERVAL_MS);
+  console.log('[cleanup] Periodic message cleanup started — checking every minute against each channel\'s own timer.');
 }
 
 module.exports = {
-  GAME_LIST,
-  buildGamePanelEmbed,
-  buildGamePanelComponents,
-  buildOtherGameModal,
-  buildExtraModal,
-  buildLimitModal,
-  buildRenameModal,
-  buildUserSelectRow,
+  handleVoiceStateUpdate,
+  sweepEmptyChannels,
+  reconcileOnStartup,
+  updateOwnerPermissions,
+  destroyTempChannel,
+  refreshPanelMessage,
+  snapshotOwnerSettings,
+  setChannelGame,
 };
+
+// ============================================================================
+// BOT BOOTSTRAP — this is what actually starts the bot.
+// Everything above only DEFINES functions. Nothing ran the bot until now,
+// which is why the process was exiting immediately with no login.
+//
+// This section requires interactionHandler.js and gameInteractionHandler.js,
+// which in turn require this same file (to call setChannelGame,
+// refreshPanelMessage, etc.) — that circular require is intentional and
+// safe ONLY because this code sits below module.exports above: by the time
+// this line runs, this file's exports are already fully set, so the other
+// two files get the real functions instead of an empty object.
+// ============================================================================
+
+const { Client, GatewayIntentBits } = require('discord.js');
+const { handleInteraction } = require('./interactionHandler');
+const { handleGameInteraction } = require('./gameInteractionHandler');
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMembers,
+  ],
+});
+
+client.once('ready', async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+
+  // Seed the game "join to create" channel every startup — storage resets
+  // on redeploy, so this can't rely on being set once and staying set.
+  // GUILD_ID comes from the environment variable already configured on
+  // Railway.
+  if (process.env.GUILD_ID) {
+    storage.setGuildConfig(process.env.GUILD_ID, {
+      gameJoinToCreateId: '1553121517879951480',
+      gameCategoryId: '1513904233471283252',
+    });
+    console.log('[startup] game join-to-create channel and category configured.');
+  } else {
+    console.warn('[startup] GUILD_ID env var is missing — game channel creation will not trigger.');
+  }
+
+  await reconcileOnStartup(client);
+});
+
+client.on('voiceStateUpdate', (oldState, newState) => {
+  handleVoiceStateUpdate(oldState, newState).catch((err) =>
+    console.error('[voiceStateUpdate] unhandled error:', err)
+  );
+});
+
+client.on('interactionCreate', async (interaction) => {
+  try {
+    await handleInteraction(interaction);
+    await handleGameInteraction(interaction);
+  } catch (err) {
+    console.error('[interactionCreate] unhandled error:', err);
+  }
+});
+
+client.login(process.env.DISCORD_TOKEN);
