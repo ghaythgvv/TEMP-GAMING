@@ -637,8 +637,16 @@ client.once('ready', async () => {
       const emojis = await guild.emojis.fetch();
       console.log(`[emoji-list] ${emojis.size} custom emojis in this server:`);
       emojis.forEach((e) => console.log(`  <:${e.name}:${e.id}>`));
+
+      // TEMP DEBUG — lists every CATEGORY in this server with its real ID,
+      // so the game->category mapping can be verified/fixed directly from
+      // logs instead of manual copy-paste. ChannelType 4 = GuildCategory.
+      const allChannels = await guild.channels.fetch();
+      const categories = allChannels.filter((c) => c && c.type === 4);
+      console.log(`[category-list] ${categories.size} categories in this server:`);
+      categories.forEach((c) => console.log(`  "${c.name}" = ${c.id}`));
     } catch (err) {
-      console.warn('[emoji-list] could not fetch guild emojis:', err.message);
+      console.warn('[emoji-list] could not fetch guild emojis/categories:', err.message);
     }
   } else {
     console.warn('[startup] GUILD_ID env var is missing — game channel creation will not trigger.');
