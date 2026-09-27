@@ -19,7 +19,7 @@
 //   client.on('interactionCreate', handleGameInteraction);
 
 const storage = require('./storage');
-const { setChannelGame } = require('./voiceManager');
+const { setChannelGame, toStyledText } = require('./voiceManager');
 const {
   GAME_LIST,
   buildGamePanelEmbed,
@@ -233,7 +233,7 @@ async function handleGameInteraction(interaction) {
         const newName = sanitize(interaction.fields.getTextInputValue('game_rename_input'));
         if (!newName) return interaction.followUp({ content: "Name can't be empty.", ephemeral: true });
 
-        await channel.setName(newName.slice(0, 100)).catch((err) => {
+        await channel.setName(toStyledText(newName).slice(0, 100)).catch((err) => {
           console.warn(`[gamevc] could not rename channel: ${err.message}`);
           return interaction.followUp({
             content: '⚠️ Discord only allows a channel name to change twice every 10 minutes — try again shortly.',
