@@ -36,11 +36,17 @@ function sanitize(name) {
 }
 
 // Refreshes the panel message in place from within a deferred interaction.
-async function updatePanel(interaction, channel, tempData) {
-  return interaction.editReply({
+// `content` is optional: pass it only when the message content itself
+// needs to change (e.g. showing the room emoji once a game is picked, or
+// clearing it again when going back to the game-picker view). Omitting it
+// leaves whatever content is already on the message untouched.
+async function updatePanel(interaction, channel, tempData, content) {
+  const payload = {
     embeds: [buildGamePanelEmbed(interaction.member, tempData, channel.members.size)],
     components: buildGamePanelComponents(tempData),
-  });
+  };
+  if (content !== undefined) payload.content = content;
+  return interaction.editReply(payload);
 }
 
 async function handleGameInteraction(interaction) {
@@ -113,7 +119,7 @@ async function handleGameInteraction(interaction) {
         tempData.extraValue = null;
         storage.setTempChannel(channel.id, tempData);
 
-        await updatePanel(interaction, channel, tempData);
+        await updatePanel(interaction, channel, tempData, '<a:Elt_emoji_86:1552074261601058836>');
 
         // A role mention inside an embed field (the "Selected Game" line)
         // never actually notifies anyone — Discord only sends pings for
@@ -145,7 +151,7 @@ async function handleGameInteraction(interaction) {
         tempData.extraType = null;
         tempData.extraValue = null;
         storage.setTempChannel(channel.id, tempData);
-        return updatePanel(interaction, channel, tempData);
+        return updatePanel(interaction, channel, tempData, `<@${tempData.ownerId}>`); // back to the picker view — tag the owner again
       }
 
       if (interaction.customId === 'game_lock') {
@@ -195,7 +201,7 @@ async function handleGameInteraction(interaction) {
         tempData.extraValue = null;
         storage.setTempChannel(channel.id, tempData);
 
-        await updatePanel(interaction, channel, tempData);
+        await updatePanel(interaction, channel, tempData, '<a:Elt_emoji_86:1552074261601058836>');
 
         if (!renamed) {
           return interaction.followUp({
