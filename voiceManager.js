@@ -318,14 +318,20 @@ async function setChannelGame(channel, tempData, channelId, gameName, emoji, cat
   const stylized = toStylizedBold(gameName.toUpperCase());
   const finalName = sanitizeChannelName(`★${stylized}★`);
   let renamed = true;
-  const editPayload = { name: finalName };
-  if (categoryId) editPayload.parent = categoryId;
-  // One combined edit call (name + category together) instead of two
-  // separate API calls — friendlier to Discord's per-channel rate limit.
-  await channel.edit(editPayload).catch((err) => {
+
+  // Separate calls on purpose: an invalid/missing category must not block
+  // the rename from going through too (they used to be one combined call).
+  await channel.setName(finalName).catch((err) => {
     renamed = false;
-    console.warn(`[gamevc] could not update channel to "${finalName}"${categoryId ? ` (category ${categoryId})` : ''}: ${err.message}`);
+    console.warn(`[gamevc] could not rename channel to "${finalName}": ${err.message}`);
   });
+
+  if (categoryId) {
+    await channel.setParent(categoryId, { lockPermissions: false }).catch((err) => {
+      console.warn(`[gamevc] could not move channel to category ${categoryId}: ${err.message}`);
+    });
+  }
+
   tempData.game = gameName;
   tempData.gameEmoji = emoji; // still used for the embed title, just not the channel name
   storage.setTempChannel(channelId, tempData);
@@ -645,6 +651,24 @@ client.once('ready', async () => {
       const categories = allChannels.filter((c) => c && c.type === 4);
       console.log(`[category-list] ${categories.size} categories in this server:`);
       categories.forEach((c) => console.log(`  "${c.name}" = ${c.id}`));
+
+      // TEMP DEBUG — some custom emojis got uploaded with random hash names
+      // instead of readable ones (Discord does this when you don't rename
+      // during upload). DM the server owner the actual pictures so they can
+      // be visually identified instead of guessed from text alone.
+      const hashEmojis = emojis.filter((e) => /^[0-9a-f]{20,}$/i.test(e.name));
+      if (hashEmojis.size > 0) {
+        try {
+          const ownerUser = await guild.fetchOwner();
+          const lines = hashEmojis.map((e) => `<:${e.name}:${e.id}>  —  \`${e.id}\``).join('\n');
+          await ownerUser.send(
+            `Here are the unnamed custom emojis in your server (random hash names). Look at the pictures and tell Claude which one is "limit" and which is "lock":\n${lines}`
+          );
+          console.log(`[emoji-list] DMed owner ${hashEmojis.size} unnamed emoji(s) for identification.`);
+        } catch (err) {
+          console.warn('[emoji-list] could not DM owner:', err.message);
+        }
+      }
     } catch (err) {
       console.warn('[emoji-list] could not fetch guild emojis/categories:', err.message);
     }
