@@ -358,7 +358,7 @@ async function createGameChannel(member, guild, config) {
 
   try {
     const panelMessage = await channel.send({
-      content: '<a:Elt_emoji_86:1552074261601058836>',
+      content: `<@${member.id}>`,
       embeds: [buildGamePanelEmbed(member, tempDataRecord)],
       components: buildGamePanelComponents(tempDataRecord),
     });
