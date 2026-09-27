@@ -9,8 +9,8 @@ const {
   UserSelectMenuBuilder,
 } = require('discord.js');
 
-// Green theme, distinct from the purple regular temp-vc panel.
-const GAME_PANEL_COLOR = 0x2ecc71;
+// Purple theme, matching the regular temp-vc panel.
+const GAME_PANEL_COLOR = 0x9b59b6;
 
 // The buttoned game list. Add/remove entries freely — 5 buttons fit per
 // row and Discord allows up to 5 rows, so this can grow to 25 before you'd
