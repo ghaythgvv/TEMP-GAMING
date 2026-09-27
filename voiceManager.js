@@ -47,6 +47,23 @@ function sanitizeChannelName(name) {
     .slice(0, 100);
 }
 
+// Converts A-Z/a-z into Mathematical Bold Italic Sans-Serif unicode
+// characters (𝘁𝗵𝗶𝘀 𝘁𝗲𝘅𝘁 𝘀𝘁𝘆𝗹𝗲). Numbers, spaces, and symbols (★, emoji)
+// are left untouched since that unicode block has no digit/symbol variants.
+function toStyledText(text) {
+  const upperBase = 0x1d468; // bold italic sans A
+  const lowerBase = 0x1d482; // bold italic sans a
+  return text
+    .split('')
+    .map((ch) => {
+      const code = ch.charCodeAt(0);
+      if (code >= 65 && code <= 90) return String.fromCodePoint(upperBase + (code - 65));
+      if (code >= 97 && code <= 122) return String.fromCodePoint(lowerBase + (code - 97));
+      return ch;
+    })
+    .join('');
+}
+
 // Extra permissions the channel owner gets on their own channel, on top of
 // whatever the panel buttons already let them do — mainly so they can also
 // use Discord's own right-click menu to move/mute/deafen people in it, and
@@ -300,9 +317,9 @@ async function createTempChannel(member, guild, config) {
 
 // Same shape as createTempChannel, but for the game join-to-create channel:
 // no per-user emoji/name/limit restore, no nickname sync — just a fresh
-// "🎮 Game" room with the game-picker panel posted in it.
+// "🎮 Game" room (styled) with the game-picker panel posted in it.
 async function createGameChannel(member, guild, config) {
-  const channelName = sanitizeChannelName(`${GAME_CHANNEL_EMOJI} Game`);
+  const channelName = sanitizeChannelName(`${GAME_CHANNEL_EMOJI} ${toStyledText('Game')}`);
 
   let channel;
   try {
@@ -376,13 +393,14 @@ async function setChannelGame(channel, tempData, channelId, gameName, emoji, cat
   // silently can't render a custom emoji there (whether it's one of your
   // server's or one uploaded to the bot via the Developer Portal), and what
   // you get instead is that raw numeric snowflake showing up in the name.
-  // So instead of any emoji, the name is styled as "★GAMENAME★" in caps —
-  // the game's own emoji only shows on the button and in the embed text,
-  // both of which render custom emoji just fine. (Any lock/mic icon you see
-  // to the left of a voice channel's name in Discord's own UI is the client
-  // showing that the channel's permissions are restricted — it's not part
-  // of the channel name string at all, so there's nothing to set here for it.)
-  const finalName = sanitizeChannelName(`★${gameName.toUpperCase()}★`);
+  // So instead of any emoji, the name is styled using the bold-italic-sans
+  // unicode set (𝘁𝗵𝗶𝘀 𝘁𝗲𝘅𝘁 𝘀𝘁𝘆𝗹𝗲) — the game's own emoji only shows on
+  // the button and in the embed text, both of which render custom emoji
+  // just fine. (Any lock/mic icon you see to the left of a voice channel's
+  // name in Discord's own UI is the client showing that the channel's
+  // permissions are restricted — it's not part of the channel name string
+  // at all, so there's nothing to set here for it.)
+  const finalName = sanitizeChannelName(toStyledText(gameName));
   let renamed = true;
   try {
     await channel.setName(finalName);
@@ -623,6 +641,7 @@ module.exports = {
   refreshPanelMessage,
   snapshotOwnerSettings,
   setChannelGame,
+  toStyledText,
 };
 
 // ============================================================================
