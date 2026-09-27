@@ -48,7 +48,7 @@ const GAME_LIST = [
 // ---- embed ----
 
 function buildGamePanelEmbed(member, tempData, memberCount) {
-  const ownerName = member ? member.displayName : 'Unknown';
+  const ownerTag = member ? `<@${member.id}>` : 'Unknown';
   const embed = new EmbedBuilder().setColor(GAME_PANEL_COLOR);
   if (member) embed.setThumbnail(member.displayAvatarURL({ size: 256 }));
 
@@ -59,7 +59,7 @@ function buildGamePanelEmbed(member, tempData, memberCount) {
       .setDescription(
         'Welcome to your Game Room!\nThis is your control panel — use it wisely,\nEnjoy your gaming experience.\n\nPick a game below to get started.'
       )
-      .addFields({ name: 'Room Owner', value: ownerName });
+      .addFields({ name: 'Room Owner', value: ownerTag });
     return embed;
   }
 
@@ -73,8 +73,8 @@ function buildGamePanelEmbed(member, tempData, memberCount) {
     .setTitle('🕹️ Room Controls')
     .setDescription('Welcome to your Game Room!\nThis is your control panel — use it wisely,\nEnjoy your gaming experience.')
     .addFields(
-      { name: 'Room Owner', value: ownerName, inline: false },
-      { name: 'Selected Game', value: `${tempData.gameEmoji || '🎮'} ${tempData.game}`, inline: false },
+      { name: 'Room Owner', value: ownerTag, inline: false },
+      { name: 'Selected Game', value: `${tempData.gameEmoji || '🎮'} \`${tempData.game}\``, inline: false },
       { name: 'Limit', value: limitText, inline: true },
       { name: 'In Room', value: roomCountText, inline: true },
       { name: 'State', value: stateText, inline: false },
