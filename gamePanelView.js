@@ -66,7 +66,7 @@ function buildGamePanelEmbed(member, tempData, memberCount) {
   // After a game is picked: the full "Room Controls" style stats view.
   const limitText = tempData.limit && tempData.limit > 0 ? `${tempData.limit}` : 'Unlimited';
   const roomCountText = `${memberCount ?? 0}/${tempData.limit && tempData.limit > 0 ? tempData.limit : '∞'}`;
-  const stateText = `${tempData.locked ? '🔒 Locked' : '🔓 Unlocked'} · 👁 Visible · ${tempData.mutedAll ? '🔇 Muted' : '🔊 Unmuted'}`;
+  const stateText = `${tempData.locked ? '🔒 Locked' : '🔓 Unlocked'} · ${tempData.mutedAll ? '🔇 Muted' : '🔊 Unmuted'}`;
   const createdText = tempData.createdAt ? `<t:${Math.floor(tempData.createdAt / 1000)}:R>` : 'Unknown';
 
   embed
@@ -119,14 +119,18 @@ function buildGamePanelComponents(tempData) {
   // Game picked — full Room Controls button set.
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('game_limit_open').setLabel('Limit').setEmoji('👥').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('game_lock').setLabel('Lock / Unlock').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('game_muteall').setLabel('Mute All').setEmoji('🔇').setStyle(ButtonStyle.Secondary),
+    tempData.locked
+      ? new ButtonBuilder().setCustomId('game_lock').setLabel('Unlock').setEmoji('<:unlock_purple_glow:1553483080998588456>').setStyle(ButtonStyle.Secondary)
+      : new ButtonBuilder().setCustomId('game_lock').setLabel('Lock').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
+    tempData.mutedAll
+      ? new ButtonBuilder().setCustomId('game_muteall').setLabel('Unmute All').setEmoji('<:1000035589_no_x_purple_glow:1553558390397993070>').setStyle(ButtonStyle.Secondary)
+      : new ButtonBuilder().setCustomId('game_muteall').setLabel('Mute All').setEmoji('<:1000035589_purple_glow:1553558391753015306>').setStyle(ButtonStyle.Secondary),
   );
 
   const row2Buttons = [];
   if (tempData.extraType === 'party') {
     row2Buttons.push(
-      new ButtonBuilder().setCustomId('game_extra_open').setLabel('Party Code').setEmoji('🔑').setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId('game_extra_open').setLabel('Party Code').setEmoji('<:1000035588_purple_glow:1553558393023897610>').setStyle(ButtonStyle.Primary)
     );
   } else if (tempData.extraType === 'name') {
     row2Buttons.push(
@@ -134,13 +138,13 @@ function buildGamePanelComponents(tempData) {
     );
   }
   row2Buttons.push(
-    new ButtonBuilder().setCustomId('game_rename_open').setLabel('Rename').setEmoji('✏️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('game_rename_open').setLabel('Rename').setEmoji('<:1000035568_purple_glow:1553472888906977300>').setStyle(ButtonStyle.Secondary)
   );
   const row2 = new ActionRowBuilder().addComponents(row2Buttons);
 
   const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('game_access_open').setLabel('Access').setEmoji('✅').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('game_kick_open').setLabel('Kick').setEmoji('➡️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('game_access_open').setLabel('Access').setEmoji('<:positivo:1553555472811040788>').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('game_kick_open').setLabel('Kick').setEmoji('<:1000035576_purple_glow:1553472901301280870>').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('game_block_open').setLabel('Block').setEmoji('⛔').setStyle(ButtonStyle.Danger),
   );
 
