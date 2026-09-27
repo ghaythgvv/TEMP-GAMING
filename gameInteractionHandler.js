@@ -118,21 +118,15 @@ async function handleGameInteraction(interaction) {
         // A role mention inside an embed field (the "Selected Game" line)
         // never actually notifies anyone — Discord only sends pings for
         // mentions in a real message's content. So the actual ping happens
-        // here instead: a plain message in the configured announce channel,
-        // separate from the panel embed.
+        // here instead: a plain message posted right in this room's own
+        // chat, separate from the panel embed above it.
         if (game.roleId) {
-          const config = storage.getGuildConfig(interaction.guild.id);
-          const announceChannel = config && config.gameAnnounceChannelId
-            ? interaction.guild.channels.cache.get(config.gameAnnounceChannelId)
-            : null;
-          if (announceChannel) {
-            await announceChannel
-              .send({
-                content: `<@&${game.roleId}> ${game.emoji} <@${interaction.user.id}> is playing **${game.label}** — join in <#${channel.id}>!`,
-                allowedMentions: { roles: [game.roleId], users: [interaction.user.id] },
-              })
-              .catch((err) => console.warn(`[gamevc] could not send game announcement: ${err.message}`));
-          }
+          await channel
+            .send({
+              content: `<@&${game.roleId}> ${game.emoji} <@${interaction.user.id}> is playing **${game.label}**!`,
+              allowedMentions: { roles: [game.roleId], users: [interaction.user.id] },
+            })
+            .catch((err) => console.warn(`[gamevc] could not send game announcement: ${err.message}`));
         }
 
         if (!renamed) {
