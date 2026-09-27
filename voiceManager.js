@@ -627,6 +627,19 @@ client.once('ready', async () => {
       gameCategoryId: '1513904233471283252',
     });
     console.log('[startup] game join-to-create channel and category configured.');
+
+    // TEMP DEBUG — lists every custom emoji in this server with its real ID,
+    // so any missing emoji tag can be looked up directly from the deploy
+    // logs instead of typing \:name: in Discord. Harmless to leave running;
+    // remove this block whenever you don't need it anymore.
+    try {
+      const guild = await client.guilds.fetch(process.env.GUILD_ID);
+      const emojis = await guild.emojis.fetch();
+      console.log(`[emoji-list] ${emojis.size} custom emojis in this server:`);
+      emojis.forEach((e) => console.log(`  <:${e.name}:${e.id}>`));
+    } catch (err) {
+      console.warn('[emoji-list] could not fetch guild emojis:', err.message);
+    }
   } else {
     console.warn('[startup] GUILD_ID env var is missing — game channel creation will not trigger.');
   }
