@@ -105,11 +105,35 @@ async function handleGameInteraction(interaction) {
         }
 
         const renamed = await setChannelGame(channel, tempData, channel.id, game.label, game.emoji, game.categoryId);
+        // gameKey is what lets the embed look this game back up (for its
+        // roleId) when rendering the "Selected Game" field — the game's
+        // display name alone isn't enough to find the matching role.
+        tempData.gameKey = key;
         tempData.extraType = game.prompt || null;
         tempData.extraValue = null;
         storage.setTempChannel(channel.id, tempData);
 
         await updatePanel(interaction, channel, tempData);
+
+        // A role mention inside an embed field (the "Selected Game" line)
+        // never actually notifies anyone — Discord only sends pings for
+        // mentions in a real message's content. So the actual ping happens
+        // here instead: a plain message in the configured announce channel,
+        // separate from the panel embed.
+        if (game.roleId) {
+          const config = storage.getGuildConfig(interaction.guild.id);
+          const announceChannel = config && config.gameAnnounceChannelId
+            ? interaction.guild.channels.cache.get(config.gameAnnounceChannelId)
+            : null;
+          if (announceChannel) {
+            await announceChannel
+              .send({
+                content: `<@&${game.roleId}> ${game.emoji} <@${interaction.user.id}> is playing **${game.label}** — join in <#${channel.id}>!`,
+                allowedMentions: { roles: [game.roleId], users: [interaction.user.id] },
+              })
+              .catch((err) => console.warn(`[gamevc] could not send game announcement: ${err.message}`));
+          }
+        }
 
         if (!renamed) {
           return interaction.followUp({
@@ -123,6 +147,7 @@ async function handleGameInteraction(interaction) {
       if (interaction.customId === 'game_change') {
         tempData.game = null;
         tempData.gameEmoji = null;
+        tempData.gameKey = null;
         tempData.extraType = null;
         tempData.extraValue = null;
         storage.setTempChannel(channel.id, tempData);
@@ -168,6 +193,10 @@ async function handleGameInteraction(interaction) {
         if (!name) return interaction.followUp({ content: "Game name can't be empty.", ephemeral: true });
 
         const renamed = await setChannelGame(channel, tempData, channel.id, name, '🎮');
+        // No matching GAME_LIST entry for a custom "Other" game, so there's
+        // no role to mention — clear gameKey so the embed falls back to the
+        // plain backticked name instead of looking up a stale previous game.
+        tempData.gameKey = null;
         tempData.extraType = null;
         tempData.extraValue = null;
         storage.setTempChannel(channel.id, tempData);
