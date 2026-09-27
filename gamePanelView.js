@@ -78,7 +78,7 @@ function buildGamePanelEmbed(member, tempData, memberCount) {
   // After a game is picked: the full "Room Controls" style stats view.
   const limitText = tempData.limit && tempData.limit > 0 ? `${tempData.limit}` : 'Unlimited';
   const roomCountText = `${memberCount ?? 0}/${tempData.limit && tempData.limit > 0 ? tempData.limit : '∞'}`;
-  const stateText = `${tempData.locked ? '🔒 Locked' : '🔓 Unlocked'} · ${tempData.mutedAll ? '🔇 Muted' : '🔊 Unmuted'}`;
+  const stateText = `${tempData.locked ? '<:1000035572_purple_glow:1553472894976393246> Locked' : '<:unlock_purple_glow:1553483080998588456> Unlocked'} · ${tempData.mutedAll ? '<:1000035589_purple_glow:1553558391753015306> Muted' : '<:1000035589_no_x_purple_glow:1553558390397993070> Unmuted'}`;
   const createdText = tempData.createdAt ? `<t:${Math.floor(tempData.createdAt / 1000)}:R>` : 'Unknown';
 
   // Selected Game shows a role mention when this game (looked up by the
