@@ -67,7 +67,7 @@ function buildGamePanelEmbed(member, tempData, memberCount) {
   // Before a game is picked: simple picker screen, no stats yet.
   if (!tempData.game) {
     embed
-      .setTitle('🎮 Game Channel')
+      .setTitle('<a:903995purpleangelheart:1554286008705486988> Game Channel')
       .setDescription(
         'Welcome to your Game Room!\nThis is your control panel — use it wisely,\nEnjoy your gaming experience.\n\nPick a game below to get started.'
       )
@@ -87,11 +87,11 @@ function buildGamePanelEmbed(member, tempData, memberCount) {
   // plain backticked name — same as before.
   const pickedGame = tempData.gameKey ? getGameByKey(tempData.gameKey) : null;
   const selectedGameValue = pickedGame && pickedGame.roleId
-    ? `${tempData.gameEmoji || '🎮'} <@&${pickedGame.roleId}>`
-    : `${tempData.gameEmoji || '🎮'} \`${tempData.game}\``;
+    ? `${tempData.gameEmoji || '<a:903995purpleangelheart:1554286008705486988>'} <@&${pickedGame.roleId}>`
+    : `${tempData.gameEmoji || '<a:903995purpleangelheart:1554286008705486988>'} \`${tempData.game}\``;
 
   embed
-    .setTitle('🕹️ Room Controls')
+    .setTitle('<a:Elt_emoji_86:1552074261601058836> Room Controls')
     .setDescription('Welcome to your Game Room!\nThis is your control panel — use it wisely,\nEnjoy your gaming experience.')
     .addFields(
       { name: 'Room Owner', value: ownerTag, inline: false },
