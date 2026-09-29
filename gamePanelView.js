@@ -113,6 +113,7 @@ function buildGamePanelEmbed(member, tempData, memberCount) {
 }
 
 // ---- buttons ----
+// Every button below uses ButtonStyle.Secondary (grey).
 
 function buildGamePanelComponents(tempData) {
   if (!tempData.game) {
@@ -151,11 +152,11 @@ function buildGamePanelComponents(tempData) {
   const row2Buttons = [];
   if (tempData.extraType === 'party') {
     row2Buttons.push(
-      new ButtonBuilder().setCustomId('game_extra_open').setLabel('Party Code').setEmoji('<:1000035588_purple_glow:1553558393023897610>').setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId('game_extra_open').setLabel('Party Code').setEmoji('<:1000035588_purple_glow:1553558393023897610>').setStyle(ButtonStyle.Secondary)
     );
   } else if (tempData.extraType === 'name') {
     row2Buttons.push(
-      new ButtonBuilder().setCustomId('game_extra_open').setLabel('Game Name').setEmoji('🎲').setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId('game_extra_open').setLabel('Game Name').setEmoji('🎲').setStyle(ButtonStyle.Secondary)
     );
   }
   row2Buttons.push(
@@ -164,9 +165,9 @@ function buildGamePanelComponents(tempData) {
   const row2 = new ActionRowBuilder().addComponents(row2Buttons);
 
   const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('game_access_open').setLabel('Access').setEmoji('<:positivo:1553555472811040788>').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('game_access_open').setLabel('Access').setEmoji('<:positivo:1553555472811040788>').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('game_kick_open').setLabel('Kick').setEmoji('<:1000035576_purple_glow:1553472901301280870>').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('game_block_open').setLabel('Block').setEmoji('⛔').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('game_block_open').setLabel('Block').setEmoji('⛔').setStyle(ButtonStyle.Secondary),
   );
 
   const row4 = new ActionRowBuilder().addComponents(
