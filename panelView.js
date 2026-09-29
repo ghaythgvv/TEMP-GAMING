@@ -30,6 +30,7 @@ function buildPanelEmbed(ownerMember, tempData) {
     .addFields({ name: 'Owner', value: `${tempData.emoji || ''} ${ownerName}`.trim() });
 }
 
+// Every button uses ButtonStyle.Secondary (grey).
 function buildPanelComponents() {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('tempvc_lock').setLabel('Lock / Unlock').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
@@ -37,9 +38,9 @@ function buildPanelComponents() {
     new ButtonBuilder().setCustomId('tempvc_rename').setLabel('Rename').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
   );
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('tempvc_trust').setLabel('Trust').setEmoji('🛡️').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('tempvc_kick').setLabel('Kick').setEmoji('🚫').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('tempvc_transfer').setLabel('Transfer Ownership').setEmoji('🔄').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('tempvc_trust').setLabel('Trust').setEmoji('🛡️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('tempvc_kick').setLabel('Kick').setEmoji('🚫').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('tempvc_transfer').setLabel('Transfer Ownership').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
   );
   return [row1, row2];
 }
