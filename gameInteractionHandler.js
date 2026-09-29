@@ -37,8 +37,8 @@ function sanitize(name) {
 
 // Refreshes the panel message in place from within a deferred interaction.
 // `content` is optional: pass it only when the message content itself
-// needs to change (e.g. showing the room emoji once a game is picked, or
-// clearing it again when going back to the game-picker view). Omitting it
+// needs to change (e.g. clearing it once a game is picked, or tagging the
+// owner again when going back to the game-picker view). Omitting it
 // leaves whatever content is already on the message untouched.
 async function updatePanel(interaction, channel, tempData, content) {
   const payload = {
@@ -119,7 +119,9 @@ async function handleGameInteraction(interaction) {
         tempData.extraValue = null;
         storage.setTempChannel(channel.id, tempData);
 
-        await updatePanel(interaction, channel, tempData, '<a:Elt_emoji_86:1552074261601058836>');
+        // '' clears the message content (the owner tag / emoji that sat
+        // above the embed), leaving just the panel.
+        await updatePanel(interaction, channel, tempData, '');
 
         // A role mention inside an embed field (the "Selected Game" line)
         // never actually notifies anyone — Discord only sends pings for
@@ -201,7 +203,7 @@ async function handleGameInteraction(interaction) {
         tempData.extraValue = null;
         storage.setTempChannel(channel.id, tempData);
 
-        await updatePanel(interaction, channel, tempData, '<a:Elt_emoji_86:1552074261601058836>');
+        await updatePanel(interaction, channel, tempData, '');
 
         if (!renamed) {
           return interaction.followUp({
