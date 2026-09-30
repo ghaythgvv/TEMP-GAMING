@@ -76,7 +76,6 @@ function toStyledText(text) {
 // permission to see or type in, especially once the base overwrites below
 // lock the channel down to the Verified role.
 const OWNER_CHANNEL_PERMISSIONS = {
-  ManageChannels: true,
   ViewChannel: true,
   Connect: true,
   Speak: true,
