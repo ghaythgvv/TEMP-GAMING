@@ -1,83 +1,111 @@
 // dashboard.js
-// Keeps ONE message up to date with the ELITE VOICE CONTROL panel.
+// Keeps one overview message (if configured) up to date with a live list of
+// every active temp/game voice channel in the guild. Looks for
+// `dashboardChannelId` (and optionally a saved `dashboardMessageId`) on the
+// guild's config record in storage — set those via whatever setup/config
+// command your bot uses. If nothing is configured, this quietly no-ops so
+// guilds that don't use a dashboard aren't affected.
 
-const { MessageFlags, ChannelType } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 const storage = require('./storage');
-const { panelPayload } = require('./elitePanelView');
+const { toFancyBold } = require('./utils');
 
-// Put your channel IDs here. The code checks each one:
-//  - text channel  -> the panel is posted there
-//  - voice channel -> used as the "Join to Create" link
-const CHANNEL_IDS = [
-  '1550294167853207573',
-  // 'ADD_THE_OTHER_CHANNEL_ID_HERE',
-];
+// Same violet accent used across the rest of the bot's panels.
+const DASHBOARD_COLOR = 0x8b5cf6;
 
-function resolveChannels(guild, config) {
-  let dashboardId = config.dashboardChannelId;
-  let createId = config.createChannelId ?? config.joinToCreateChannelId;
+// Discord caps embeds at 25 fields — plenty for a live "who's online"
+// board, but if you ever get more channels than that at once the extras
+// just won't have their own field (nothing breaks, they're just left off).
+const MAX_FIELDS = 25;
 
-  for (const id of CHANNEL_IDS) {
-    const ch = guild.channels.cache.get(id);
-    if (!ch) continue;
-    const isVoice = ch.type === ChannelType.GuildVoice || ch.type === ChannelType.GuildStageVoice;
-    if (isVoice) createId = id;
-    else dashboardId = id;
+function buildChannelField(guild, channelId, data) {
+  const channel = guild.channels.cache.get(channelId);
+  if (!channel) return null; // it got deleted since the last refresh — just skip it
+
+  const memberCount = channel.members.size;
+  const ownerTag = data.ownerId ? `<@${data.ownerId}>` : 'Unknown';
+
+  const lines = [`👤 **Owner:** ${ownerTag}`, `👥 **Members:** ${memberCount}`];
+
+  if (data.type === 'game') {
+    if (data.partyCode) lines.push(`🔑 **Party Code:** \`${data.partyCode}\``);
+    if (data.gameNameExtra) lines.push(`📝 **Game Name:** \`${data.gameNameExtra}\``);
+  } else {
+    lines.push(data.locked ? '🔒 **Status:** Locked' : '🔓 **Status:** Open');
+    if (data.limit) lines.push(`🎚️ **Limit:** ${data.limit}`);
   }
-  return { dashboardId, createId };
+
+  lines.push(`🔗 Jump in: <#${channelId}>`);
+
+  return {
+    name: channel.name,
+    value: lines.join('\n'),
+    inline: true,
+  };
 }
 
-function collectRooms(guild) {
-  const all = storage.getAllTempChannels();
-  return Object.entries(all)
-    .filter(([, data]) => data.guildId === guild.id)
-    .map(([channelId]) => {
-      const channel = guild.channels.cache.get(channelId);
-      if (!channel) return null; // deleted since last refresh
-      return { name: channel.name, count: channel.members.size };
-    })
-    .filter(Boolean);
+function buildDashboardEmbed(guild, channels) {
+  const embed = new EmbedBuilder()
+    .setColor(DASHBOARD_COLOR)
+    .setTitle(`🎙️ ${toFancyBold(guild.name.toUpperCase())} — ${toFancyBold('ACTIVE VOICE CHANNELS')}`)
+    .setTimestamp();
+
+  if (guild.iconURL()) embed.setThumbnail(guild.iconURL());
+
+  if (channels.length === 0) {
+    embed
+      .setDescription('😴 Nothing going on right now — be the first to jump in a **Join to Create** channel!')
+      .setFooter({ text: 'Last updated' });
+    return embed;
+  }
+
+  const totalMembers = channels.reduce((sum, { channelId }) => {
+    const channel = guild.channels.cache.get(channelId);
+    return sum + (channel ? channel.members.size : 0);
+  }, 0);
+
+  embed.setDescription(
+    `📡 **${channels.length}** channel${channels.length === 1 ? '' : 's'} live right now • **${totalMembers}** ${totalMembers === 1 ? 'person' : 'people'} connected`
+  );
+
+  const fields = channels
+    .map(({ channelId, data }) => buildChannelField(guild, channelId, data))
+    .filter(Boolean)
+    .slice(0, MAX_FIELDS);
+
+  embed.addFields(fields);
+  embed.setFooter({ text: 'Last updated' });
+  return embed;
 }
 
 async function refreshDashboard(guild) {
   if (!guild) return;
-  const config = storage.getGuildConfig(guild.id) || {};
-  const { dashboardId, createId } = resolveChannels(guild, config);
-  if (!dashboardId) return; // nothing configured for this guild
+  const config = storage.getGuildConfig(guild.id);
+  if (!config || !config.dashboardChannelId) return; // no dashboard configured for this guild
 
-  const dashboardChannel = guild.channels.cache.get(dashboardId);
+  const dashboardChannel = guild.channels.cache.get(config.dashboardChannelId);
   if (!dashboardChannel) {
-    console.warn(`[dashboard] channel ${dashboardId} not found in ${guild.name}`);
+    console.warn(`[dashboard] configured dashboardChannelId ${config.dashboardChannelId} not found in ${guild.name}`);
     return;
   }
 
-  const payload = panelPayload({
-    rooms: collectRooms(guild),
-    createChannelId: createId,
-    settings: {
-      autoLock: config.autoLock,
-      antiRaid: config.antiRaid,
-      nsfw: config.nsfw,
-    },
-  });
+  const all = storage.getAllTempChannels();
+  const channels = Object.entries(all)
+    .filter(([, data]) => data.guildId === guild.id)
+    .map(([channelId, data]) => ({ channelId, data }));
+
+  const embed = buildDashboardEmbed(guild, channels);
 
   try {
     let message = config.dashboardMessageId
       ? await dashboardChannel.messages.fetch(config.dashboardMessageId).catch(() => null)
       : null;
 
-    // An old embed message can't become a Components V2 message:
-    // delete it once and post a fresh one.
-    if (message && !message.flags.has(MessageFlags.IsComponentsV2)) {
-      await message.delete().catch(() => {});
-      message = null;
-    }
-
     if (message) {
-      await message.edit(payload);
+      await message.edit({ embeds: [embed] });
     } else {
-      message = await dashboardChannel.send(payload);
-      storage.setGuildConfig(guild.id, { dashboardChannelId: dashboardId, dashboardMessageId: message.id });
+      message = await dashboardChannel.send({ embeds: [embed] });
+      storage.setGuildConfig(guild.id, { dashboardMessageId: message.id });
     }
   } catch (err) {
     console.warn(`[dashboard] could not refresh dashboard in ${guild.name}: ${err.message}`);
