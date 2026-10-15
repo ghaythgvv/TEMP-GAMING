@@ -1,10 +1,12 @@
 // storage.js
 // JSON-file-backed persistence for: per-user saved settings/emoji, live temp
-// voice channel records, and per-guild configuration.
+// voice channel records, per-guild configuration, and the list of members the
+// bot server-muted through a game room's Mute All (so they can be unmuted the
+// next time they join a voice channel, even after a restart).
 //
 // NOTE: Railway's filesystem is ephemeral on redeploy/restart unless you
-// attach a Volume mounted at this directory. Fine for now, but attach one
-// before relying on this in production.
+// attach a Volume mounted at this directory. Attach one before relying on this
+// in production, otherwise this list (and everything else) resets on redeploy.
 
 const fs = require('fs');
 const path = require('path');
@@ -12,20 +14,27 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'storage.json');
 
+function emptyData() {
+  return { users: {}, tempChannels: {}, guildConfigs: {}, mutedVictims: [] };
+}
+
 function ensureFile() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ users: {}, tempChannels: {}, guildConfigs: {} }, null, 2));
+    fs.writeFileSync(DATA_FILE, JSON.stringify(emptyData(), null, 2));
   }
 }
 
 function readAll() {
   ensureFile();
   try {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    // Older storage files won't have the newer keys yet.
+    if (!data.mutedVictims) data.mutedVictims = [];
+    return data;
   } catch (err) {
     console.error('[storage] corrupt storage file, resetting:', err.message);
-    const fresh = { users: {}, tempChannels: {}, guildConfigs: {} };
+    const fresh = emptyData();
     writeAll(fresh);
     return fresh;
   }
@@ -33,7 +42,11 @@ function readAll() {
 
 function writeAll(data) {
   ensureFile();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  // Write to a temp file, then rename, so a crash mid-write can't leave a
+  // half-written (and therefore unreadable) storage file behind.
+  const tmp = `${DATA_FILE}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, DATA_FILE);
 }
 
 // ---- per-user saved settings (carried over between that user's channels) ----
@@ -105,6 +118,30 @@ function setGuildConfig(guildId, value) {
   return data.guildConfigs[guildId];
 }
 
+// ---- members server-muted by a game room's Mute All ("guildId:userId" keys) ----
+// These get unmuted the next time the member joins any voice channel.
+
+function hasMutedVictim(key) {
+  const data = readAll();
+  return data.mutedVictims.includes(key);
+}
+
+function addMutedVictims(keys) {
+  if (!keys || keys.length === 0) return;
+  const data = readAll();
+  data.mutedVictims = [...new Set([...data.mutedVictims, ...keys])];
+  writeAll(data);
+}
+
+function removeMutedVictims(keys) {
+  if (!keys || keys.length === 0) return;
+  const data = readAll();
+  const drop = new Set(keys);
+  const before = data.mutedVictims.length;
+  data.mutedVictims = data.mutedVictims.filter((k) => !drop.has(k));
+  if (data.mutedVictims.length !== before) writeAll(data);
+}
+
 module.exports = {
   getUserSettings,
   setUserSettings,
@@ -116,4 +153,7 @@ module.exports = {
   getAllTempChannels,
   getGuildConfig,
   setGuildConfig,
+  hasMutedVictim,
+  addMutedVictims,
+  removeMutedVictims,
 };
